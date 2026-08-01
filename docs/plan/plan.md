@@ -27,13 +27,13 @@ Two independent halves connected only by a Parquet file:
 - Normalizes each listing's free-text CPU name and matches it against a maintained CPU benchmark reference table (see Benchmark Strategy). Matching is fuzzy/alias-based with a manual-override list for CPUs that don't match cleanly — this is the part expected to need ongoing curation, not the dashboard code itself.
 - Computes derived cost fields for every listing: price per benchmark point, price per GB RAM, price per TB disk, effective total monthly cost.
 - Writes ONE denormalized Parquet file — no relational structure, every column a query might filter/sort on is already present.
-- Publishes the Parquet file to static storage that supports CORS + HTTP range requests (required for DuckDB-WASM to do partial reads instead of downloading the whole file on every page load).
-- Runs as a long-lived Deployment with an internal refresh loop (house rule: no Job/CronJob) on a Rackspace Spot cluster, wired through GitOps (`jedarden/declarative-config`, `k8s/` path) — never a live kubectl mutation.
+- Publishes the Parquet file to **Cloudflare R2** (native CORS + HTTP range-request support, required for DuckDB-WASM to do partial reads instead of downloading the whole file on every page load). Chosen over self-hosting on Garage/SeaweedFS to avoid standing up public HTTPS ingress for what's otherwise a personal tool, and it matches Server Radar's proven architecture for this exact use case. Requires an R2 API token stored as a cluster secret (OpenBao/ExternalSecret, matching existing patterns) for the pipeline to push to.
+- Runs as a long-lived Deployment with an internal refresh loop (house rule: no Job/CronJob) on a Rackspace Spot cluster, wired through GitOps (`jedarden/declarative-config`, `k8s/` path) — never a live kubectl mutation. Compute (pipeline) and hosting (R2/Pages) are intentionally decoupled: the cluster only needs egress to Cloudflare's API, nothing is served from cluster ingress.
 
 ### 2. Client (fully static, browser-only)
 
-- Static site bundling DuckDB-WASM.
-- Loads the Parquet file over HTTP via DuckDB-WASM's httpfs, using range requests so only the needed row groups are fetched.
+- Static site bundling DuckDB-WASM, deployed to **Cloudflare Pages** — same hosting pattern as jedarden.com.
+- Loads the Parquet file over HTTP via DuckDB-WASM's httpfs, pointed at the R2 bucket's public URL, using range requests so only the needed row groups are fetched.
 - All search/filter/sort UI translates directly to SQL `WHERE`/`ORDER BY` against the single pre-joined table — no joins, no benchmark lookup, at query time.
 - No backend calls at request time. The only "dynamic" part of the deployed site is that the Parquet file itself changes on the pipeline's refresh cadence.
 
@@ -41,8 +41,8 @@ Two independent halves connected only by a Parquet file:
 
 - `pipeline/` — fetcher + CPU benchmark join + cost-metric computation + Parquet writer; containerized; runs the refresh loop.
 - `benchmark-map/` — maintained CPU-name → benchmark-score reference table + alias/override list + unmatched-CPU report. Highest-maintenance artifact in the repo; see `docs/notes/benchmark-priority.md`.
-- `web/` — static frontend (DuckDB-WASM + filter/search UI).
-- Parquet output — published to object storage with CORS + range-request support (candidate hosts TBD, see Open Questions).
+- `web/` — static frontend (DuckDB-WASM + filter/search UI), deployed to Cloudflare Pages.
+- Parquet output — published to Cloudflare R2 (CORS + range-request support).
 
 ## Benchmark Strategy
 
@@ -81,9 +81,9 @@ Search/filter/sort only, over the current snapshot — no history, no alerts, no
 - [ ] Phase 1: Pipeline — fetch Hetzner auction data, define raw schema
 - [ ] Phase 2: Benchmark reference table + CPU-name matching/override system + unmatched-CPU reporting
 - [ ] Phase 3: Cost-metric computation + Parquet writer
-- [ ] Phase 4: Static hosting for the Parquet file (CORS + range requests) + refresh-loop Deployment via declarative-config
+- [ ] Phase 4: R2 bucket + API token (secret via OpenBao/ExternalSecret) + refresh-loop Deployment via declarative-config
 - [ ] Phase 5: Client dashboard — DuckDB-WASM wiring + search/filter UI
-- [ ] Phase 6: Deploy pipeline to a Rackspace Spot cluster via GitOps; wire static site hosting
+- [ ] Phase 6: Deploy pipeline to a Rackspace Spot cluster via GitOps; wire up Cloudflare Pages for `web/`
 
 ## v2 / Future Candidates
 
@@ -97,7 +97,6 @@ Not part of the initial build — noted so later scope decisions don't have to b
 
 ## Open Questions
 
-- Where to host the Parquet file: cluster-local S3-compatible bucket (Garage/SeaweedFS — note SeaweedFS has had stability issues on ardenone-cluster) vs. the existing B2/Cloudflare path (ARMOR) vs. Cloudflare R2 directly, matching the jedarden.com hosting pattern.
 - Refresh cadence for the pipeline — existing tools cluster around 5–15 minutes; needs to be weighed against how often CPU coverage actually needs re-checking versus how often prices change.
 - Frontend framework choice (plain JS + DuckDB-WASM vs. a light framework) — low-stakes given how thin the UI is.
 - Which Rackspace Spot cluster hosts the pipeline — any is viable since the dataset regenerates on its own cadence and nothing is stateful; final choice TBD.
