@@ -104,7 +104,11 @@ The 10-minute pipeline cadence means every run is a snapshot, so a real time ser
 - AMD vs. Intel value trend (price-per-benchmark-point, not just raw price).
 - Benchmark coverage rate over time (% of listings with a matched score) — an internal health metric for `benchmark-map/`; coverage regressions should be visible over time, not just inferable from the current unmatched-CPU report.
 
-**Decision-support fields** derived from the above, for later UI surfacing: an "at/near all-time-low" badge (separately for price and for price-per-benchmark-point), and a percentile rank of a listing's current value against both its own config's history and its CPU-family cohort (so rare configs without deep history still get a comparison).
+**Decision-support fields** derived from the above, for later UI surfacing:
+
+- **Value percentile (headline stat).** Hetzner repeatedly auctions batches of the same decommissioned server model, so exact config signatures (CPU + RAM + disk layout + datacenter) recur naturally over time — that's a real historical distribution to rank against, not an approximation. For each current listing, compute where its `price_per_benchmark_point` (and, separately, its raw price) falls in the distribution of every prior observation of that *same* config signature — e.g. "cheaper than 85% of every time this exact config has ever appeared." This turns "is this a good deal" into a direct percentile instead of a guess.
+- **Cohort fallback.** A config needs enough accumulated duplicate observations for its own distribution to mean anything. Below some minimum sample count (exact threshold TBD once real data volume is known), fall back to ranking against the broader CPU-family cohort instead of the exact config — keeps newly-appeared or rare configs from showing a meaningless percentile off 1–2 data points.
+- An "at/near all-time-low" badge (separately for price and for price-per-benchmark-point), which is really the percentile stat's 0th-percentile special case.
 
 ### Storage pattern for history
 
