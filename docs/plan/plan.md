@@ -89,7 +89,36 @@ Search/filter/sort only, over the current snapshot — no history, no alerts, no
 
 Not part of the initial build — noted so later scope decisions don't have to be re-derived from scratch:
 
-- Price history (append rather than overwrite the Parquet file) and performance-normalized alerting ("notify when €/PassMark drops below X") — the specific combination the research found nobody has built.
+### Historical stats
+
+The 10-minute pipeline cadence means every run is a snapshot, so a real time series accumulates for free — worth deriving once v1's live view is solid. Grouped by what each stat is for:
+
+**Per-config price/value history** (keyed by a config signature — CPU model + RAM + disk layout + datacenter — not by Hetzner's `listing_id`, since the same effective config reappears under a new listing ID every auction cycle):
+- All-time-low tracked *separately* for raw price and for `price_per_benchmark_point` — consistent with the plan's "no blended score" stance, these stay two independent facts, not one.
+- Price velocity: average price (and price-per-benchmark-point) drop per snapshot tick while a listing is live — signals whether a listing is still falling or near its floor.
+- Listing lifetime: how many ticks a listing survives before disappearing — a proxy for how fast that config sells, i.e. how much patience a given deal affords.
+
+**Market-level trends** (aggregate, not per-listing):
+- Rolling median/percentile of `price_per_benchmark_point`, overall and per CPU family, so a current listing can be flagged "N% below its trailing 7/30-day value baseline" — a benchmark-normalized version of Server Radar's raw-price index, which is exactly the combination the research found nobody has built.
+- Listing volume over time by CPU family, datacenter, RAM tier, disk type.
+- AMD vs. Intel value trend (price-per-benchmark-point, not just raw price).
+- Benchmark coverage rate over time (% of listings with a matched score) — an internal health metric for `benchmark-map/`; coverage regressions should be visible over time, not just inferable from the current unmatched-CPU report.
+
+**Decision-support fields** derived from the above, for later UI surfacing: an "at/near all-time-low" badge (separately for price and for price-per-benchmark-point), and a percentile rank of a listing's current value against both its own config's history and its CPU-family cohort (so rare configs without deep history still get a comparison).
+
+### Storage pattern for history
+
+Storing this without breaking the pipeline's stateless-per-run design (everything lives in Cloudflare — R2 for data, Pages for the static site — so history can't just live in local pipeline state):
+
+- **Never read-modify-write a growing file.** Rewriting an ever-larger Parquet file in R2 every 10 minutes has no real locking and gets slower/riskier as it grows — a bad fit for object storage.
+- Instead, each run writes one small **immutable, timestamped snapshot file** to R2, Hive-partitioned by time (e.g. `history/dt=2026-08-02/1010.parquet`), containing that run's per-config *summary* rows (min price, min price-per-benchmark-point, listing count per config signature) rather than a full raw dump — keeps files small and bounded by distinct-config count, not total listings × every tick forever.
+- History files are append-only — written once, never mutated. DuckDB-WASM assembles the full history as one logical table via a glob over the partitioned files (`read_parquet('history/**/*.parquet')`); the client does the assembly at query time, not the pipeline.
+- The pipeline's per-run logic stays identical in spirit to the current-snapshot writer (fetch → compute → write-once) — it just also writes to this second, additive location.
+- Unbounded growth is a later problem, not a v1-of-this-feature one: a periodic compaction step (e.g. monthly, rolling raw 10-minute ticks into daily aggregates) can bound storage once this ships. Not needed to start.
+
+### Other candidates
+
+- Performance-normalized alerting ("notify when €/PassMark drops below X") — depends on the historical-stats work above.
 - Multi-source benchmark cross-validation (Geekbench/YABS corpora) to verify and extend PassMark coverage.
 - Workload-weighted scoring (user-adjustable single-thread vs. multi-thread emphasis) instead of, or alongside, the separate per-resource metrics.
 - Comparison/side-by-side view.
