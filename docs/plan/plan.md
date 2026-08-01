@@ -23,7 +23,7 @@ Two independent halves connected only by a Parquet file:
 
 ### 1. Pipeline (server-side, scheduled)
 
-- Fetches current listings from Hetzner's public Server Auction data feed.
+- Fetches current listings from Hetzner's public Server Auction data feed every **10 minutes**. Hetzner doesn't document a fixed update schedule (price drops happen at randomized intervals by design), so this matches the practical cadence third-party tools converge on — frequent enough to catch price drops and new listings without hammering the endpoint.
 - Normalizes each listing's free-text CPU name and matches it against a maintained CPU benchmark reference table (see Benchmark Strategy). Matching is fuzzy/alias-based with a manual-override list for CPUs that don't match cleanly — this is the part expected to need ongoing curation, not the dashboard code itself.
 - Computes derived cost fields for every listing: price per benchmark point, price per GB RAM, price per TB disk, effective total monthly cost.
 - Writes ONE denormalized Parquet file — no relational structure, every column a query might filter/sort on is already present.
@@ -97,6 +97,5 @@ Not part of the initial build — noted so later scope decisions don't have to b
 
 ## Open Questions
 
-- Refresh cadence for the pipeline — existing tools cluster around 5–15 minutes; needs to be weighed against how often CPU coverage actually needs re-checking versus how often prices change.
 - Frontend framework choice (plain JS + DuckDB-WASM vs. a light framework) — low-stakes given how thin the UI is.
 - Which Rackspace Spot cluster hosts the pipeline — any is viable since the dataset regenerates on its own cadence and nothing is stateful; final choice TBD.
