@@ -144,7 +144,7 @@ Gap identified: nothing in the survivor set gave the plan's own Scenario 4 "Adop
 
 ### Adoption decision
 
-- **Adopted:** 1, 2, 3, 4 — beads `had-4ct`, `had-1vp`, `had-33l`, `had-39b` (P2), added to `docs/plan/plan.md`'s new "v1.1 — Adopted Idea-Gen Additions" section.
+- **Adopted:** 1, 2, 3, 4 — beads `had-4ct`, `had-1vp`, `had-33l`, `had-39b` (P2), added to `docs/plan/plan.md`'s new "v1.1 — Adopted Idea-Gen Additions" section. Finalist #1 was later split (2026-08-02, bead-atomicity pass) into two beads — `had-4ct` (Starter configs) and `had-6a5f` (best-deal-now button) — since they're separable features that happened to get merged during idea-gen's crossover/consolidation step.
 - **Adopted, deprioritized:** 5 (Saved/named filter presets) — bead `had-2ua` (P3), explicitly built after 1-4.
 - **Adopted, resolves an Open Question:** 6 (Single static HTML, no framework) — no bead (it's a settled decision, not a build task); folded directly into Architecture > Client, with an explicit clarifying note that it decides frontend rendering only — the pipeline/backend that generates the Parquet data is unchanged. Removed the now-resolved "Frontend framework choice" line from Open Questions.
 - **Rejected:** 7 (Laptop-script month 1) — user directive: set up the cluster container and GitOps work up front instead; this just confirms the plan's existing Phase 4/6 approach, no plan change needed.
