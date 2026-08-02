@@ -36,6 +36,8 @@ The Phase 1 implementation was already present in the codebase (committed in `aa
 - **EC-1 (Empty feed result)**: Returns empty list instead of crashing (lines 169-171, 193-196)
 - **EC-2 (Feed schema change)**: Raises `FetchError` with raw sample payload for manual diagnosis (lines 186-191)
 - **Individual malformed listings**: Skipped with logging but don't abort entire run (lines 204-208)
+- **HTTP/Network errors**: Properly converted to `FetchError` with status codes and context (lines 142-152)
+- **Multi-endpoint retry**: Preserves original error details when all endpoints fail (lines 112-124)
 
 ### 3. Test Suite (`pipeline/tests/test_fetcher.py`)
 
