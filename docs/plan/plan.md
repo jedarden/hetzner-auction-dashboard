@@ -352,7 +352,7 @@ Storing this without breaking the pipeline's stateless-per-run design (everythin
 
 ## Open Questions
 
-- Pipeline implementation language/runtime (affects which Parquet-writer library is available — see Architecture's Format-verification note and Testing Strategy's Parquet/DuckDB-WASM conformance test, Phase 3 — and what the containerized `pipeline/` component, per Components, is built with) — final choice TBD. **Resolve before Phase 1** (the fetcher itself is Phase 1's deliverable, and it has to be written in something).
+- ~~Pipeline implementation language/runtime (affects which Parquet-writer library is available — see Architecture's Format-verification note and Testing Strategy's Parquet/DuckDB-WASM conformance test, Phase 3 — and what the containerized `pipeline/` component, per Components, is built with) — final choice TBD. **Resolve before Phase 1** (the fetcher itself is Phase 1's deliverable, and it has to be written in something).~~ **RESOLVED (2026-08-02)**: Python 3.11+ with pyarrow. See `docs/notes/had-1i3.md` for full rationale.
 - Which Rackspace Spot cluster hosts the pipeline — any is viable since the dataset regenerates on its own cadence and nothing is stateful; final choice TBD. **Resolve before Phase 6** (deployment phase needs a target cluster).
 
 ## Risk Register
