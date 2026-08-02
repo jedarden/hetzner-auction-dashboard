@@ -88,14 +88,14 @@ Two independent halves connected only by a Parquet file:
 
 ### Pipeline Run Lifecycle
 
-Every run — the v1 current-snapshot Parquet file, its companion `unmatched-cpus.json` unmatched-CPU report (see Benchmark Strategy), and later each v2 history file — follows the same lifecycle, so one failure mode and one fix covers all three:
+Every run — the v1 current-snapshot Parquet file, its companion `unmatched-cpus.json` unmatched-CPU report (see Benchmark Strategy), and later each v2 history file — follows the same verify-before-publish discipline (steps 1-5 below), so one failure mode and one fix covers all three. Step 6's specific "promote, then clean up" mechanics differ slightly for history files, since they never reuse a key — see that step for the scoping:
 
 1. **Fetch** — pull current listings from Hetzner's auction feed.
 2. **Normalize/match** — clean CPU strings, resolve against `benchmark-map/`, flag unmatched.
 3. **Compute** — derive `price_effective_monthly` first (see Data Models for the setup-fee formula), then `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk` (see Data Models for each formula).
 4. **Write to a temp key in R2** — never write directly to the live key the client reads. Set a short `Cache-Control: max-age=60` header on the object at write time (see ADR-4) — well under the 10-minute publish cadence, so any CDN staleness after the swap self-resolves quickly.
 5. **Verify** — confirm the temp object is readable and structurally sane before it's allowed to become live: non-zero size, and parses as valid Parquet (for the snapshot/history files) or valid JSON (for the unmatched-CPU report).
-6. **Atomic swap** — promote the temp key to the live key (copy-then-delete-old, since R2/S3-compatible storage has no native rename; the old key is only deleted after the new one is confirmed in place). The `Cache-Control` header carries through to the live key.
+6. **Promote temp key to its permanent key.** For the snapshot and the unmatched-CPU report — which reuse one fixed, well-known live key every run — this is an atomic swap: copy-then-delete-old, since R2/S3-compatible storage has no native rename; the old key is only deleted after the new one is confirmed in place. A v2 history file instead writes to a brand-new, never-before-used key each run (see Storage pattern for history), so there is no old key to delete — promotion there is just the temp-to-permanent-key copy, confirmed in place, with nothing to clean up after. Either way, the `Cache-Control` header carries through to the live/permanent key.
 7. **On failure at any step** — abort immediately without touching the live key. The previously published snapshot keeps serving untouched; the run is simply retried next cycle.
 
 This is the same anti-pattern-avoidance the plan already reasons through for v2 history files (never read-modify-write a growing file) — applied back to v1, which faces the identical overwrite risk every 10-minute cycle and needs the same guarantee, despite not having stated one until now.
@@ -224,7 +224,7 @@ Search/filter/sort only, over the current snapshot — no history, no alerts, no
 
 ## Testing Strategy
 
-- **CPU-matching fixture set.** A curated set of real Hetzner auction CPU strings, including known-tricky variants (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4", differing whitespace/casing, a family with no benchmark entry at all), each asserted against its expected PassMark match — or explicit `benchmark_matched = false` for the intentionally-unmatchable ones. This is the project's core heuristic logic (see Benchmark Strategy), so it's the one place this kind of test pays for itself; everywhere else in this project is comparatively low-risk.
+- **CPU-matching fixture set.** A curated set of real Hetzner auction CPU strings, covering three distinct categories: (1) known-tricky *same-chip* variants that must all resolve to one correct match (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4", differing whitespace/casing); (2) intentionally-unmatchable strings (e.g. a family with no benchmark entry at all), asserted as explicit `benchmark_matched = false`; and (3) **near-miss adversarial pairs** — real, similarly-named but genuinely distinct CPU models (e.g. "Xeon E5-2680 v3" vs. "Xeon E5-2680 v4," same model number, different generation) — each asserted against its own correct match and asserted to *never* cross-match the other. Category (3) is the fixture set's only defense against Risk Register R1 (false-positive matches): categories (1) and (2) only prove the matcher finds the right answer or honestly gives up, neither proves it doesn't confidently produce the *wrong* one. This is the project's core heuristic logic (see Benchmark Strategy), so it's the one place this kind of test pays for itself; everywhere else in this project is comparatively low-risk.
 - **Parquet/DuckDB-WASM conformance test.** Before Phase 3 is considered complete, a round-trip test writes a sample Parquet file with the pipeline's chosen writer and confirms DuckDB-WASM can actually load and query it via httpfs range requests — the one hand-off point between the two halves of the architecture where "should work in theory" isn't good enough. Gated at Phase 3, not later, so neither Phase 4's R2 publish infrastructure nor Phase 5's client UI gets built on top of an unverified file format.
 - **Definition of done.** Before considering the pipeline or client phase complete: the CPU-matching fixture suite and the Parquet/DuckDB-WASM conformance test both pass. No CI-gated benchmark infrastructure beyond that — this is a solo hobby project, not a system with a regression budget to enforce.
 
@@ -330,13 +330,14 @@ Storing this without breaking the pipeline's stateless-per-run design (everythin
 ## Open Questions
 
 - Frontend framework choice (plain JS + DuckDB-WASM vs. a light framework) — low-stakes given how thin the UI is. **Resolve before Phase 5** (client dashboard implementation needs this settled to start).
+- Pipeline implementation language/runtime (affects which Parquet-writer library is available — see Format Verification, Phase 3 — and what the containerized `pipeline/` component, per Components, is built with) — final choice TBD. **Resolve before Phase 1** (the fetcher itself is Phase 1's deliverable, and it has to be written in something).
 - Which Rackspace Spot cluster hosts the pipeline — any is viable since the dataset regenerates on its own cadence and nothing is stateful; final choice TBD. **Resolve before Phase 6** (deployment phase needs a target cluster).
 
 ## Risk Register
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|-----------|--------|------------|
-| R1 | CPU-matching produces false-positive matches (wrong benchmark score attached to a listing) | Medium | High | Manual override list + unmatched-CPU report (published to R2 each run as `unmatched-cpus.json` — see Benchmark Strategy) surfaces gaps; the CPU-matching fixture set (Testing Strategy) catches known-tricky variants before they ship |
+| R1 | CPU-matching produces false-positive matches (wrong benchmark score attached to a listing) | Medium | High | The manual override list and unmatched-CPU report (see Benchmark Strategy) only ever cover zero-match and ambiguous-match cases (EC-3) — by construction neither can surface a confident-but-wrong match, since that `cpu_raw` string resolved successfully. Actual false-positive protection is the CPU-matching fixture set's near-miss adversarial-pair category (Testing Strategy): real, similarly-named-but-distinct CPU models asserted to never cross-match each other |
 | R2 | Cloudflare R2/Pages outage | Low | Medium | Pipeline aborts and retries next cycle (Pipeline Run Lifecycle); dashboard keeps serving the last snapshot it already loaded client-side until R2 recovers |
 | R3 | Hetzner changes the auction feed's format without notice | Medium | High | Pipeline fails closed on parse error (EC-2), keeps serving the last snapshot, logs the raw payload for a quick manual fix |
 | R4 | DuckDB-WASM hits a scale ceiling as Hetzner's auction volume grows | Low | Medium | See Performance Ceiling — fallback is server-side pre-aggregation or narrower default filters |
