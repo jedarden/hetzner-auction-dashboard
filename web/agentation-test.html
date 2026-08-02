@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentation CDN ESM Test - Hetzner Auction Dashboard</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        /* Dashboard content (plain HTML/JS, no framework) */
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .filters {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .filter-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        input, select {
+            width: 100%;
+            max-width: 300px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .results {
+            display: grid;
+            gap: 15px;
+        }
+
+        .listing {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            background: white;
+        }
+
+        .listing h3 {
+            margin: 0 0 10px 0;
+        }
+
+        .price {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2563eb;
+        }
+
+        /* Agentation root container - completely isolated */
+        #agentation-root {
+            /* Agentation renders its toolbar here via React */
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <header>
+            <h1>Hetzner Auction Dashboard</h1>
+            <p>Plain HTML/JS dashboard with DuckDB-WASM</p>
+        </header>
+
+        <!-- Main dashboard content (no framework) -->
+        <div class="filters">
+            <div class="filter-group">
+                <label for="cpu-family">CPU Family</label>
+                <select id="cpu-family">
+                    <option value="">All</option>
+                    <option value="ryzen">AMD Ryzen</option>
+                    <option value="xeon">Intel Xeon</option>
+                    <option value="core">Intel Core</option>
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="min-ram">Minimum RAM (GB)</label>
+                <input type="number" id="min-ram" value="32" min="0">
+            </div>
+
+            <div class="filter-group">
+                <label for="max-price">Maximum Price (€)</label>
+                <input type="number" id="max-price" value="50" min="0">
+            </div>
+        </div>
+
+        <div class="results">
+            <div class="listing" data-test-id="listing-1">
+                <h3>Xeon E5-2680 v4 - 2x 2TB HDD - 64GB RAM</h3>
+                <p class="price">€25.99/month</p>
+                <p>€/benchmark: 0.12 | Location: Falkenstein</p>
+            </div>
+
+            <div class="listing" data-test-id="listing-2">
+                <h3>Ryzen 9 5950X - 2x 1TB NVMe - 128GB RAM</h3>
+                <p class="price">€42.50/month</p>
+                <p>€/benchmark: 0.08 | Location: Helsinki</p>
+            </div>
+
+            <div class="listing" data-test-id="listing-3">
+                <h3>Core i7-12700 - 1x 500GB NVMe - 32GB RAM</h3>
+                <p class="price">€18.75/month</p>
+                <p>€/benchmark: 0.15 | Location: Nuremberg</p>
+            </div>
+        </div>
+
+        <p style="margin-top: 30px; color: #666;">
+            <strong>Note:</strong> Agentation toolbar (bottom-right) is mounted in an isolated React root via CDN ESM.
+            The dashboard above is plain HTML/JS with no framework. Removing Agentation has zero effect on filters/sorts/data loading.
+        </p>
+    </div>
+
+    <!-- Agentation container - isolated from dashboard -->
+    <div id="agentation-root"></div>
+
+    <!-- Load React 18 and agentation from CDN as ESM -->
+    <script type="module">
+        // Import React 18 from CDN (ESM)
+        import React from 'https://esm.sh/react@18.3.1';
+        import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+
+        // Import agentation from CDN (ESM)
+        import { Agentation } from 'https://esm.sh/agentation@3.0.2';
+
+        // Mount agentation in its own isolated root
+        const agentationRoot = document.getElementById('agentation-root');
+        const root = createRoot(agentationRoot);
+
+        root.render(React.createElement(Agentation, {
+            onAnnotationAdd: (annotation) => {
+                console.log('Agentation annotation added:', annotation);
+            },
+            onCopy: (markdown) => {
+                console.log('Agentation copied to clipboard:', markdown);
+            }
+        }));
+
+        // Dashboard's own JavaScript (completely independent)
+        document.getElementById('cpu-family').addEventListener('change', filterListings);
+        document.getElementById('min-ram').addEventListener('input', filterListings);
+        document.getElementById('max-price').addEventListener('input', filterListings);
+
+        function filterListings() {
+            // This is the dashboard's own logic - has no dependency on Agentation
+            console.log('Filtering listings (dashboard logic, not Agentation)');
+            // In real implementation, this would query DuckDB-WASM
+        }
+    </script>
+</body>
+</html>
