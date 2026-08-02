@@ -86,14 +86,14 @@ Two independent halves connected only by a Parquet file:
 
 ### Pipeline Run Lifecycle
 
-Every run — both the v1 current-snapshot file and, later, each v2 history file — follows the same lifecycle, so one failure mode and one fix covers both:
+Every run — the v1 current-snapshot Parquet file, its companion `unmatched-cpus.json` unmatched-CPU report (see Benchmark Strategy), and later each v2 history file — follows the same lifecycle, so one failure mode and one fix covers all three:
 
 1. **Fetch** — pull current listings from Hetzner's auction feed.
 2. **Normalize/match** — clean CPU strings, resolve against `benchmark-map/`, flag unmatched.
 3. **Compute** — derive `price_effective_monthly` first (see Data Models for the setup-fee formula), then `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk` (see Data Models for each formula).
-4. **Write to a temp key in R2** — never write directly to the live key the client reads.
+4. **Write to a temp key in R2** — never write directly to the live key the client reads. Set a short `Cache-Control: max-age=60` header on the object at write time (see ADR-4) — well under the 10-minute publish cadence, so any CDN staleness after the swap self-resolves quickly.
 5. **Verify** — confirm the temp object is readable and structurally sane (non-zero size, parses as valid Parquet) before it's allowed to become live.
-6. **Atomic swap** — promote the temp key to the live key (copy-then-delete-old, since R2/S3-compatible storage has no native rename; the old key is only deleted after the new one is confirmed in place).
+6. **Atomic swap** — promote the temp key to the live key (copy-then-delete-old, since R2/S3-compatible storage has no native rename; the old key is only deleted after the new one is confirmed in place). The `Cache-Control` header carries through to the live key.
 7. **On failure at any step** — abort immediately without touching the live key. The previously published snapshot keeps serving untouched; the run is simply retried next cycle.
 
 This is the same anti-pattern-avoidance the plan already reasons through for v2 history files (never read-modify-write a growing file) — applied back to v1, which faces the identical overwrite risk every 10-minute cycle and needs the same guarantee, despite not having stated one until now.
@@ -118,7 +118,7 @@ The pipeline Deployment **MUST run as a single active writer** (`replicas: 1`). 
 ### Architecture Decision Records
 
 **ADR-1: Cloudflare R2 over self-hosted Garage/SeaweedFS.**
-Decision: publish the Parquet file to Cloudflare R2. Rationale: native CORS + HTTP range-request support required for DuckDB-WASM's partial reads, without standing up public HTTPS ingress for what's otherwise a personal tool, and it matches Server Radar's proven architecture for this exact use case. Rejected alternative: self-hosting on Garage or SeaweedFS — rejected because it would require its own public ingress and TLS just to serve one static file, for no real benefit over a managed object store built for exactly this. Invalidation trigger: if R2 cost or Cloudflare account limits ever become a real constraint (unlikely at this data volume), revisit self-hosting.
+Decision: publish the Parquet file to Cloudflare R2. Rationale: native CORS + HTTP range-request support required for DuckDB-WASM's partial reads, without standing up public HTTPS ingress for what's otherwise a personal tool, and it matches Server Radar's proven architecture for this exact use case. Rejected alternative: self-hosting on Garage or SeaweedFS — rejected because it would require its own public ingress and TLS just to serve one static file, for no real benefit over a managed object store built for exactly this. Invalidation trigger: if R2 cost or Cloudflare account limits ever become a real constraint (unlikely at this data volume), revisit self-hosting. (CDN cache freshness after each publish's atomic swap is a related but separate concern — see ADR-4.)
 
 **ADR-2: PassMark-only benchmark source for v1.**
 Decision: source CPU benchmark scores exclusively from PassMark in v1. Rationale: matches the proven approach of every existing implementation (Auction Browser+, hzfind, Server Auction Tracker) — no reason to start anywhere less-validated, and it keeps the matching pipeline to one schema instead of reconciling multiple sources upfront. Rejected alternative: launching with multi-source cross-validation (Geekbench/YABS) from day one — rejected because it multiplies matching complexity before the single-source join is even proven solid. Invalidation trigger: if unmatched-CPU coverage gaps stay persistently high after the override list has had a real chance to mature, promote the v2 cross-validation candidate ahead of schedule.
@@ -126,10 +126,14 @@ Decision: source CPU benchmark scores exclusively from PassMark in v1. Rationale
 **ADR-3: Separate per-resource value metrics instead of one blended score.**
 Decision: expose `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` as independent columns rather than a single weighted "Total Score." The same reasoning applies one level deeper, inside the benchmark metric itself: single-thread and multi-thread PassMark scores are two independent CPU-performance axes, so `price_per_benchmark_point` is split into `_single` and `_multi` variants rather than picked-or-blended into one number. `price_per_benchmark_point_multi` is the default sort (see Client Dashboard Scope) since most Hetzner auction hardware is multi-core server-class and PassMark's own primary CPU Mark rating is multi-thread-based, but `_single` stays equally queryable for buyers who weight single-core workloads more. Rationale: a fixed arbitrary weighting (as Auction Browser+ and Server Auction Tracker do) hides the number that matters most for a given buyer's use case; separate, sortable columns let the user decide what to prioritize. Rejected alternative: a blended 0–100 score like the existing tools, and — one level deeper — a fixed-weight single/multi blend; both rejected for the same reason, the exact category weakness this project differentiates against (see Competitive Positioning). Invalidation trigger: if personal usage shows a blended score would genuinely save filtering effort without hiding anything, reconsider it as an optional additional column — never as a replacement for the separate metrics.
 
+**ADR-4: Short max-age Cache-Control instead of an active CDN purge on swap.**
+Decision: set a short `Cache-Control: max-age=60` header (well under the 10-minute publish cadence) on both the Parquet snapshot and the `unmatched-cpus.json` report at publish time (temp-key write, carried through the swap — see Pipeline Run Lifecycle), rather than issuing an explicit Cloudflare cache-purge call after each swap. Rationale: bounds any post-swap CDN staleness (EC-7) to roughly a minute — small relative to the 10-minute cadence — without adding a Cloudflare zone-level cache-purge credential the pipeline doesn't otherwise need (its only credential today is the R2 API token, scoped to the bucket — see Security); an active purge also isn't instantaneous in practice (purge propagation itself takes time), so the freshness gain over a short max-age doesn't justify the added credential surface and per-run API call. Rejected alternative: an explicit CDN purge step after every swap — rejected because it needs a broader-scoped Cloudflare API token than R2 alone requires, adds one more per-run failure point, and its freshness guarantee isn't actually absolute either. Invalidation trigger: if a max-age this short ever causes a measurable origin-load or cost problem (unlikely at this traffic scale), revisit — either lengthen it slightly or move to purge-on-swap.
+
 ## Components
 
 - `pipeline/` — fetcher + CPU benchmark join + cost-metric computation + Parquet writer; containerized; runs the refresh loop.
-- `benchmark-map/` — maintained CPU-name → benchmark-score reference table + alias/override list + unmatched-CPU report. Highest-maintenance artifact in the repo; see `docs/notes/benchmark-priority.md`.
+- `benchmark-map/` — maintained CPU-name → benchmark-score reference table + alias/override list, git-tracked and hand-maintained. Highest-maintenance artifact in the repo; see `docs/notes/benchmark-priority.md`.
+- Unmatched-CPU report (`unmatched-cpus.json`) — generated by the pipeline each run and published to R2 alongside the Parquet snapshot; not part of the git-tracked `benchmark-map/` directory (see Benchmark Strategy).
 - `web/` — static frontend (DuckDB-WASM + filter/search UI), deployed to Cloudflare Pages.
 - Parquet output — published to Cloudflare R2 (CORS + range-request support).
 
@@ -140,7 +144,7 @@ This is the part of the project that actually matters (see `docs/notes/benchmark
 - **Source (v1):** PassMark single- and multi-thread scores, matching the proven approach of every existing implementation. No reason to start anywhere less-validated.
 - **Matching:** raw CPU string → normalized model name → PassMark ID, via an alias table for naming variants (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4") plus a manual override list for anything that doesn't match cleanly.
 - **No blended score.** Deliberately do *not* build an Auction-Browser+/Server-Auction-Tracker-style single weighted "Total Score" — and don't blend single-thread and multi-thread PassMark scores into one figure either. Expose `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` as independent, separately sortable/filterable columns (closer to hzfind's approach). A fixed arbitrary weighting hides the number that matters most; separate columns let the user decide what to prioritize. `price_per_benchmark_point_multi` is the default sort (see Client Dashboard Scope) since PassMark's own primary CPU Mark rating is multi-thread-based and most auction hardware is multi-core server-class; `_single` remains independently available for single-core-sensitive workloads.
-- **Unmatched CPUs are surfaced, never guessed.** A listing whose CPU has no benchmark match gets a `NULL` score and an explicit "unscored" state in the UI — it is never silently dropped or given a default/estimated value. The pipeline writes an unmatched-CPU report each run so the override list can be extended; coverage gaps are the main way this project can fail quietly, so they need to stay visible.
+- **Unmatched CPUs are surfaced, never guessed.** A listing whose CPU has no benchmark match gets a `NULL` score and an explicit "unscored" state in the UI — it is never silently dropped or given a default/estimated value. Each run, the pipeline publishes a companion `unmatched-cpus.json` file to R2 at a well-known key alongside the Parquet snapshot, using the same temp-key-then-swap discipline (see Pipeline Run Lifecycle) — overwritten every cycle with that run's unresolved `cpu_raw` strings and their affected-listing counts, not accumulated across runs. Since the bucket already serves the Parquet file over a public CORS-enabled URL, that same base URL surfaces this report for direct viewing — no separate UI or git-commit path needed. The override list can then be extended from it, highest-volume gaps first; coverage gaps are the main way this project can fail quietly, so they need to stay visible.
 - **v2 candidate (not v1):** cross-validate/extend PassMark coverage using the disconnected community benchmark data that already exists for Hetzner auction hardware (Geekbench Browser, VPSBenchmarks, BareMetalBench results posted after-the-fact by buyers). No existing tool mines this back into a live feed — it's a real opportunity, but out of scope until the PassMark-only v1 is solid.
 
 ## Data Models
@@ -166,10 +170,11 @@ This schema is the actual interface contract between the two halves of the syste
 |---|------|--------------|------------|
 | EC-1 | Empty feed result | Hetzner's feed returns zero listings for a run | Publish it if the response was well-formed (an empty auction is real, e.g. between drops); if malformed/error instead, abort per Pipeline Run Lifecycle and keep the last snapshot |
 | EC-2 | Feed schema change | Hetzner changes the shape/fields of the auction feed response | Fail closed: abort the run, log the parse error with a sample of the raw payload, keep serving the last snapshot until the pipeline's parser is updated for the new shape |
-| EC-3 | Ambiguous CPU match | A raw `cpu_raw` string matches more than one benchmark-map entry | Do not guess — treat as unmatched (`benchmark_matched = false`) and add to the unmatched-CPU report for manual override-list resolution, same as a zero-match case |
+| EC-3 | Ambiguous CPU match | A raw `cpu_raw` string matches more than one benchmark-map entry | Do not guess — treat as unmatched (`benchmark_matched = false`) and add to the unmatched-CPU report (`unmatched-cpus.json`, see Benchmark Strategy) for manual override-list resolution, same as a zero-match case |
 | EC-4 | Listing ID reuse | Hetzner's `listing_id` reappears across ticks with different specs | Assumption: `listing_id` is unique within a single run but is NOT assumed stable in meaning across ticks — the pipeline never carries state keyed by `listing_id` between runs. If this assumption is wrong, v1's exposure is limited (no history yet), and v2's config-signature key deliberately sidesteps it, since that key never relies on `listing_id` as a stable identifier at all — it's keyed on CPU + RAM + disk + datacenter precisely because `listing_id` isn't assumed stable across ticks (see v2 Historical Stats, where the same config reappears under a new `listing_id` each cycle) |
 | EC-5 | Truncated/corrupt publish | R2 accepts the temp-key write but the resulting object is truncated or unreadable | Caught by the verify step in Pipeline Run Lifecycle before swap — a temp object that doesn't parse as valid Parquet never gets promoted to the live key |
 | EC-6 | Uncached Parquet range request | Client requests a byte range the CDN hasn't cached yet | Falls back to an R2 origin fetch for that range (normal cache-miss behavior) — slightly slower first load after each publish, not a correctness issue |
+| EC-7 | Post-swap CDN staleness | Cloudflare's edge cache may keep serving previously-cached bytes at the live key's URL for a short window after an atomic swap, instead of the just-published version | Bounded by the short `Cache-Control: max-age=60` header set on publish (see Pipeline Run Lifecycle, ADR-4) — well under the 10-minute publish cadence, so any residual staleness window self-resolves quickly without needing an active CDN purge call |
 
 ### Failure Modes & Resilience
 
@@ -203,9 +208,9 @@ Two distinct "something's wrong" states the client can be in, and what the user 
 
 ## Client Dashboard Scope (v1)
 
-Search/filter/sort only, over the current snapshot — no history, no alerts, no comparison view, no auto-buy. These are all proven features elsewhere (see research) that can be layered on later without changing the core architecture; v1 stays scoped to nailing the benchmark join and a clean filter/sort experience on top of it.
+Search/filter/sort only, over the current snapshot — no history, no alerts, no comparison view, no auto-buy. These are all proven features elsewhere (see `docs/research/existing-tools.md`) that can be layered on later without changing the core architecture; v1 stays scoped to nailing the benchmark join and a clean filter/sort experience on top of it.
 
-- Filters: price, RAM, disk type/size, CPU model, location/datacenter, ECC, benchmark-matched-only toggle.
+- Filters: price (`price_effective_monthly`, not `price_base` — consistent with the value-focused framing used throughout this doc, see Data Models), RAM, disk type/size, uplink speed, CPU model, location/datacenter, ECC, benchmark-matched-only toggle.
 - Sorts: any column, including all four per-resource value metrics independently (not just price) — `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk`.
 - Default sort: `price_per_benchmark_point_multi` ascending, `NULLS FIRST` — multi-thread is the default because most Hetzner auction hardware is multi-core server-class and PassMark's own primary CPU Mark rating is multi-thread-based; `price_per_benchmark_point_single` remains an equally first-class, independently sortable column for buyers who weight single-core workloads more (see ADR-3). NULLS FIRST reinforces that benchmark-adjusted value, not raw price, is the point, and puts unscored listings (NULL `price_per_benchmark_point_multi`) at the top of the results instead of the bottom, keeping benchmark-map coverage gaps visible rather than easy to miss.
 - Staleness indicator driven by `fetched_at`.
@@ -241,16 +246,16 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   - A malformed/empty response is handled without crashing (see Edge Case Catalog EC-1/EC-2)
 
 - [ ] **Phase 2: Benchmark reference table + CPU-name matching/override system + unmatched-CPU reporting**
-  Delivers: the `benchmark-map/` artifact — PassMark reference table, alias table, manual override list, and the unmatched-CPU report the pipeline emits each run.
+  Delivers: the `benchmark-map/` artifact — PassMark reference table, alias table, manual override list — plus the pipeline logic that generates the unmatched-CPU report (`unmatched-cpus.json`) each run (see Benchmark Strategy).
   Completion criteria:
   - The CPU-matching fixture set (Testing Strategy) resolves correctly against the reference/alias tables
   - An intentionally-unmatchable CPU string produces `benchmark_matched = false`, never a guessed score
-  - Unmatched-CPU report is generated and lists every unresolved CPU seen in the fixture set
+  - Unmatched-CPU report is generated in the `unmatched-cpus.json` shape (unresolved `cpu_raw` strings + affected-listing counts) and lists every unresolved CPU seen in the fixture set — publishing it to R2 alongside the Parquet file happens in Phase 4, once the R2 publish path exists
 
 - [ ] **Phase 3: Cost-metric computation + Parquet writer**
   Delivers: `price_effective_monthly`, `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` computed per listing, written to a single flat Parquet file.
   Completion criteria:
-  - `price_effective_monthly` computes correctly against a fixture set (`price_base` + `price_setup_fee`, per Data Models' amortization note), including one listing with a non-zero `price_setup_fee` and one with zero, confirming the fee folds in only when present
+  - `price_effective_monthly` computes correctly against a fixture set (`price_base` + `price_setup_fee`, per Data Models' full-value (non-amortized) setup-fee note), including one listing with a non-zero `price_setup_fee` and one with zero, confirming the fee folds in only when present
   - All four per-resource metrics (`price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk`) compute correctly against a fixture set of known listings, including one with `benchmark_matched = false` (both benchmark-point metrics are NULL, never a divide-by-zero or fallback estimate)
   - Parquet writer's output passes the DuckDB-WASM httpfs conformance test (Testing Strategy) — required for Phase 3 to be considered complete, since Phase 4's R2 publish and Phase 5's client UI both build on an assumed-working file format
 
@@ -260,6 +265,7 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   - Deployment reconciles cleanly via ArgoCD from `declarative-config`
   - R2 API token is stored as an ExternalSecret and never appears in pipeline logs
   - A forced failure mid-run (e.g. killed fetch) leaves the live R2 key untouched, verified by comparing the object's hash before/after
+  - Both the Parquet snapshot and the `unmatched-cpus.json` report publish to R2 each cycle via the same temp-key-then-swap lifecycle, with the `Cache-Control: max-age=60` header applied (see Benchmark Strategy, Pipeline Run Lifecycle, ADR-4)
 
 - [ ] **Phase 5: Client dashboard — DuckDB-WASM wiring + search/filter UI**
   Delivers: the static `web/` site that loads the published Parquet file via DuckDB-WASM httpfs and implements all Client Dashboard Scope (v1) filters/sorts.
@@ -327,7 +333,7 @@ Storing this without breaking the pipeline's stateless-per-run design (everythin
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|-----------|--------|------------|
-| R1 | CPU-matching produces false-positive matches (wrong benchmark score attached to a listing) | Medium | High | Manual override list + unmatched-CPU report surfaces gaps; the CPU-matching fixture set (Testing Strategy) catches known-tricky variants before they ship |
+| R1 | CPU-matching produces false-positive matches (wrong benchmark score attached to a listing) | Medium | High | Manual override list + unmatched-CPU report (published to R2 each run as `unmatched-cpus.json` — see Benchmark Strategy) surfaces gaps; the CPU-matching fixture set (Testing Strategy) catches known-tricky variants before they ship |
 | R2 | Cloudflare R2/Pages outage | Low | Medium | Pipeline aborts and retries next cycle (Pipeline Run Lifecycle); dashboard keeps serving the last snapshot it already loaded client-side until R2 recovers |
 | R3 | Hetzner changes the auction feed's format without notice | Medium | High | Pipeline fails closed on parse error (EC-2), keeps serving the last snapshot, logs the raw payload for a quick manual fix |
 | R4 | DuckDB-WASM hits a scale ceiling as Hetzner's auction volume grows | Low | Medium | See Performance Ceiling — fallback is server-side pre-aggregation or narrower default filters |
@@ -336,5 +342,5 @@ Storing this without breaking the pipeline's stateless-per-run design (everythin
 ## Plan B / Fallback Strategies
 
 - **If DuckDB-WASM + R2 range requests turns out too slow at real scale** (R4): fall back to a thin server-side API doing the pre-filtering Hetzner-side, trading away some of the "no backend at request time" simplicity for scale headroom — the Parquet schema (Data Models) stays the contract either way, just read by a small service instead of directly by the browser.
-- **If PassMark coverage stays too sparse after the override list has matured** (ties to R1/ADR-2): prioritize manual overrides for the highest-volume unmatched CPUs first, ranked by how often they appear in the unmatched-CPU report, rather than broadening to multi-source matching before it's actually needed.
+- **If PassMark coverage stays too sparse after the override list has matured** (ties to R1/ADR-2): prioritize manual overrides for the highest-volume unmatched CPUs first, ranked by each CPU's affected-listing count in the current `unmatched-cpus.json` report (see Benchmark Strategy), rather than broadening to multi-source matching before it's actually needed.
 - **If R2/Cloudflare Pages has a sustained outage** (R2): no separate plan needed — retry-next-cycle and last-known-good serving (Pipeline Run Lifecycle) are already the fallback.
