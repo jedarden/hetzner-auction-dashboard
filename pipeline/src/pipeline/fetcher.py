@@ -109,19 +109,25 @@ class HetznerAuctionFetcher:
                     "/wird/json.pl?json=get_server_market_v2",  # Legacy endpoint
                 ]
 
+                last_error = None
                 for endpoint in endpoints:
                     try:
                         data = await self._try_endpoint(client, endpoint)
                         return self._parse_response(data)
                     except FetchError as e:
                         logger.debug(f"Endpoint {endpoint} failed: {e}")
+                        last_error = e
                         continue
                     except Exception as e:
                         logger.debug(f"Unexpected error from {endpoint}: {e}")
+                        last_error = FetchError(f"Unexpected error from {endpoint}: {e}")
                         continue
 
-                # If all endpoints fail, raise with last error
-                raise FetchError("All Hetzner endpoints failed or returned malformed data")
+                # If all endpoints fail, raise the last FetchError with original details
+                if last_error:
+                    raise last_error
+                else:
+                    raise FetchError("All Hetzner endpoints failed or returned malformed data")
 
         except httpx.HTTPStatusError as e:
             raise FetchError(
@@ -136,8 +142,18 @@ class HetznerAuctionFetcher:
         url = f"{self.base_url}{endpoint}"
         logger.debug(f"Trying endpoint: {url}")
 
-        response = await client.get(url)
-        response.raise_for_status()
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # Convert HTTP errors to FetchError with status code
+            raise FetchError(
+                f"HTTP error from {url}: {e.response.status_code}",
+                status_code=e.response.status_code,
+            ) from e
+        except httpx.RequestError as e:
+            # Convert network errors to FetchError
+            raise FetchError(f"Network error fetching from {url}: {e}") from e
 
         try:
             data = response.json()
