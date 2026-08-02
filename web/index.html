@@ -783,6 +783,208 @@
         let currentPreset = null;
         let userSortAxis = 'auto'; // 'auto' means use preset's default, otherwise specific sort field
         let bestDealMode = false; // Track if we're showing only the best deal
+        let isInitializingFromURL = false; // Track if we're currently initializing from URL
+
+        // Serialize current filter state to URL query params
+        function serializeFiltersToURL() {
+            const params = new URLSearchParams();
+
+            // Serialize preset if active
+            if (currentPreset) {
+                params.set('preset', currentPreset.id);
+            }
+
+            // Serialize user sort axis
+            if (userSortAxis !== 'auto') {
+                params.set('sort', userSortAxis);
+            }
+
+            // Serialize individual filter values
+            const cpuFamily = document.getElementById('cpu-family').value;
+            if (cpuFamily) params.set('cpu_family', cpuFamily);
+
+            const minRam = document.getElementById('min-ram').value;
+            if (minRam && parseInt(minRam) > 0) params.set('min_ram', minRam);
+
+            const maxPrice = document.getElementById('max-price').value;
+            if (maxPrice) params.set('max_price', maxPrice);
+
+            const diskType = document.getElementById('disk-type').value;
+            if (diskType) params.set('disk_type', diskType);
+
+            const minDisk = document.getElementById('min-disk').value;
+            if (minDisk && parseFloat(minDisk) > 0) params.set('min_disk', minDisk);
+
+            const location = document.getElementById('location').value;
+            if (location) params.set('location', location);
+
+            const benchmarkMatchedOnly = document.getElementById('benchmark-matched-only').checked;
+            if (benchmarkMatchedOnly) params.set('benchmark_matched_only', 'true');
+
+            // Serialize best deal mode
+            if (bestDealMode) params.set('best_deal', 'true');
+
+            // Update URL without reloading page
+            const newURL = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+            window.history.pushState({ path: newURL }, '', newURL);
+        }
+
+        // Restore filter state from URL query params
+        function restoreFiltersFromURL() {
+            const params = new URLSearchParams(window.location.search);
+
+            // Check if there are any filter parameters
+            const hasFilters = params.has('preset') ||
+                              params.has('sort') ||
+                              params.has('cpu_family') ||
+                              params.has('min_ram') ||
+                              params.has('max_price') ||
+                              params.has('disk_type') ||
+                              params.has('min_disk') ||
+                              params.has('location') ||
+                              params.has('benchmark_matched_only') ||
+                              params.has('best_deal');
+
+            if (!hasFilters) {
+                return false; // No filters to restore
+            }
+
+            isInitializingFromURL = true; // Set flag to prevent URL updates during restoration
+
+            try {
+                // Restore best deal mode if present
+                if (params.get('best_deal') === 'true') {
+                    bestDealMode = true;
+                    // Update UI for best deal mode
+                    const button = document.getElementById('best-deal-now');
+                    const description = document.getElementById('best-deal-description');
+                    button.classList.add('active');
+                    button.innerHTML = `
+                        <span class="best-deal-icon">✓</span>
+                        <span>Show All Results</span>
+                    `;
+                }
+
+                // Restore user sort axis if present
+                if (params.has('sort')) {
+                    userSortAxis = params.get('sort');
+                    document.getElementById('sort-axis').value = userSortAxis;
+                }
+
+                // Check if preset is specified
+                if (params.has('preset')) {
+                    const presetId = params.get('preset');
+                    const preset = starterConfigs.presets.find(p => p.id === presetId);
+
+                    if (preset) {
+                        // Apply the preset
+                        currentPreset = preset;
+
+                        // Update active state
+                        document.querySelectorAll('.config-preset').forEach(el => {
+                            el.classList.toggle('active', el.dataset.presetId === preset.id);
+                        });
+
+                        // Apply preset filters
+                        const filters = preset.filters;
+
+                        // CPU family
+                        const cpuFamilySelect = document.getElementById('cpu-family');
+                        if (filters.cpu_family_preference && filters.cpu_family_preference !== 'any') {
+                            cpuFamilySelect.value = filters.cpu_family_preference;
+                        } else {
+                            cpuFamilySelect.value = '';
+                        }
+
+                        // RAM
+                        document.getElementById('min-ram').value = filters.ram_gb_min || 0;
+
+                        // Price
+                        if (filters.price_effective_monthly_max) {
+                            document.getElementById('max-price').value = filters.price_effective_monthly_max;
+                        } else {
+                            document.getElementById('max-price').value = '';
+                        }
+
+                        // Disk type
+                        const diskTypeSelect = document.getElementById('disk-type');
+                        if (filters.disk_type && filters.disk_type !== 'any') {
+                            diskTypeSelect.value = filters.disk_type;
+                        } else {
+                            diskTypeSelect.value = '';
+                        }
+
+                        // Disk size
+                        document.getElementById('min-disk').value = filters.disk_size_tb_min || 0;
+
+                        // Benchmark matched only
+                        document.getElementById('benchmark-matched-only').checked = filters.benchmark_matched_only || false;
+
+                        // Location if in URL
+                        if (params.has('location')) {
+                            document.getElementById('location').value = params.get('location');
+                        }
+
+                        // Apply filtering and sorting
+                        filterAndSortListings(preset.sort, preset.sort_direction);
+
+                        isInitializingFromURL = false;
+                        return true;
+                    }
+                }
+
+                // If no preset or preset not found, restore individual filter values
+                if (params.has('cpu_family')) {
+                    document.getElementById('cpu-family').value = params.get('cpu_family');
+                }
+
+                if (params.has('min_ram')) {
+                    document.getElementById('min-ram').value = params.get('min_ram');
+                }
+
+                if (params.has('max_price')) {
+                    document.getElementById('max-price').value = params.get('max_price');
+                }
+
+                if (params.has('disk_type')) {
+                    document.getElementById('disk-type').value = params.get('disk_type');
+                }
+
+                if (params.has('min_disk')) {
+                    document.getElementById('min-disk').value = params.get('min_disk');
+                }
+
+                if (params.has('location')) {
+                    document.getElementById('location').value = params.get('location');
+                }
+
+                if (params.has('benchmark_matched_only')) {
+                    document.getElementById('benchmark-matched-only').checked = params.get('benchmark_matched_only') === 'true';
+                }
+
+                // Apply filtering and sorting
+                filterAndSortListings();
+
+                // Handle best deal mode
+                if (bestDealMode) {
+                    const bestDeal = findBestDeal();
+                    if (bestDeal) {
+                        displayListings([bestDeal]);
+                        document.getElementById('results-count').textContent = '1 (Best Deal)';
+                        document.getElementById('current-sort').textContent = 'Best Value (multi-thread)';
+                        const description = document.getElementById('best-deal-description');
+                        description.textContent = `Showing the single best-value server: ${bestDeal.cpu_model} at €${bestDeal.price_effective_monthly.toFixed(2)}/month`;
+                    }
+                }
+
+            } finally {
+                isInitializingFromURL = false;
+                // Replace history to prevent going back to the same URL
+                window.history.replaceState({}, '', window.location.pathname + window.location.search);
+            }
+
+            return true;
+        }
 
         // Find the single best-value listing (highest price_per_benchmark_point_multi among benchmark_matched=true)
         function findBestDeal() {
@@ -841,6 +1043,11 @@
                 displayListings([bestDeal]);
                 document.getElementById('results-count').textContent = '1 (Best Deal)';
                 document.getElementById('current-sort').textContent = 'Best Value (multi-thread)';
+            }
+
+            // Serialize to URL for bookmarking
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
             }
         }
 
@@ -910,6 +1117,11 @@
 
             // Apply filtering and sorting
             filterAndSortListings(preset.sort, preset.sort_direction);
+
+            // Serialize to URL for bookmarking
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
         }
 
         // Reset filters to default state
@@ -930,9 +1142,15 @@
             document.getElementById('min-disk').value = 0;
             document.getElementById('location').value = '';
             document.getElementById('benchmark-matched-only').checked = false;
+            document.getElementById('sort-axis').value = 'auto';
 
             // Reset to default sort
             filterAndSortListings('price_per_benchmark_point_multi', 'asc');
+
+            // Serialize to URL for bookmarking (this will clear the URL)
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
         }
 
         // Filter and sort listings based on current filters
@@ -1173,6 +1391,10 @@
                         });
                     }
                     filterAndSortListings();
+                    // Serialize to URL for bookmarking
+                    if (!isInitializingFromURL) {
+                        serializeFiltersToURL();
+                    }
                 });
             }
         });
@@ -1207,6 +1429,10 @@
             }
             updateSortDescription();
             filterAndSortListings();
+            // Serialize to URL for bookmarking
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
         });
 
         // Update sort description based on current selection
@@ -1226,11 +1452,27 @@
             await loadCloudPricing();
             initStarterConfigs();
             updateSortDescription();
-            filterAndSortListings();
+
+            // Try to restore filters from URL
+            const restoredFromURL = restoreFiltersFromURL();
+
+            // If no URL filters, run default initialization
+            if (!restoredFromURL) {
+                filterAndSortListings();
+            }
+
             updateStaleness();
         }
 
         init();
+
+        // Handle browser back/forward buttons
+        window.addEventListener('popstate', (event) => {
+            // Restore filters from URL when user navigates through history
+            isInitializingFromURL = true;
+            restoreFiltersFromURL();
+            isInitializingFromURL = false;
+        });
 
         // In production, update staleness every minute
         setInterval(updateStaleness, 60000);

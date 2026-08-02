@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Serialization Test</title>
+</head>
+<body>
+    <h1>URL Serialization Test</h1>
+    <div id="results"></div>
+
+    <script>
+        // Test URL parameter encoding/decoding
+        function testURLSerialization() {
+            const tests = [];
+
+            // Test 1: Basic filters
+            let params = new URLSearchParams();
+            params.set('cpu_family', 'ryzen');
+            params.set('min_ram', '32');
+            params.set('max_price', '50');
+            params.set('disk_type', 'nvme');
+            tests.push({
+                name: 'Basic filters',
+                url: `?${params.toString()}`,
+                expected: { cpu_family: 'ryzen', min_ram: 32, max_price: 50, disk_type: 'nvme' }
+            });
+
+            // Test 2: Preset with sort override
+            params = new URLSearchParams();
+            params.set('preset', 'game-server');
+            params.set('sort', 'price_per_gb_ram');
+            tests.push({
+                name: 'Preset with sort override',
+                url: `?${params.toString()}`,
+                expected: { preset: 'game-server', sort: 'price_per_gb_ram' }
+            });
+
+            // Test 3: All filters + best deal
+            params = new URLSearchParams();
+            params.set('cpu_family', 'ryzen');
+            params.set('min_ram', '64');
+            params.set('max_price', '80');
+            params.set('disk_type', 'nvme');
+            params.set('min_disk', '2');
+            params.set('location', 'fsn');
+            params.set('benchmark_matched_only', 'true');
+            params.set('sort', 'price_per_benchmark_point_single');
+            params.set('best_deal', 'true');
+            tests.push({
+                name: 'All filters + best deal',
+                url: `?${params.toString()}`,
+                expected: {
+                    cpu_family: 'ryzen',
+                    min_ram: 64,
+                    max_price: 80,
+                    disk_type: 'nvme',
+                    min_disk: 2,
+                    location: 'fsn',
+                    benchmark_matched_only: true,
+                    sort: 'price_per_benchmark_point_single',
+                    best_deal: true
+                }
+            });
+
+            // Test 4: Empty URL (no filters)
+            tests.push({
+                name: 'Empty URL (no filters)',
+                url: '',
+                expected: {}
+            });
+
+            // Test 5: Boolean parameter encoding
+            params = new URLSearchParams();
+            params.set('benchmark_matched_only', 'true');
+            params.set('best_deal', 'true');
+            tests.push({
+                name: 'Boolean parameter encoding',
+                url: `?${params.toString()}`,
+                expected: { benchmark_matched_only: true, best_deal: true }
+            });
+
+            // Display results
+            let html = '<table border="1" cellpadding="10">';
+            html += '<tr><th>Test Name</th><th>URL</th><th>Status</th></tr>';
+
+            tests.forEach(test => {
+                // Try to parse the URL back
+                const resultParams = new URLSearchParams(test.url.startsWith('?') ? test.url.slice(1) : test.url);
+                const parsed = {};
+                for (const [key, value] of resultParams) {
+                    parsed[key] = value === 'true' ? true : (value === 'false' ? false : value);
+                }
+
+                // Check if parsed matches expected
+                const matches = JSON.stringify(parsed) === JSON.stringify(test.expected);
+                const status = matches ? '✅ PASS' : '❌ FAIL';
+
+                html += `<tr>`;
+                html += `<td>${test.name}</td>`;
+                html += `<td><code>${test.url || '(empty)'}</code></td>`;
+                html += `<td>${status}</td>`;
+                html += `</tr>`;
+            });
+
+            html += '</table>';
+
+            // Add example URLs for the main dashboard
+            html += '<h2>Example Dashboard URLs:</h2>';
+            html += '<ul>';
+            html += '<li><a href="index.html?cpu_family=ryzen&min_ram=64&max_price=80" target="_blank">Ryzen servers with 64GB+ RAM under €80/month</a></li>';
+            html += '<li><a href="index.html?preset=game-server" target="_blank">Game Server preset</a></li>';
+            html += '<li><a href="index.html?disk_type=hdd&min_disk=4&sort=price_per_tb_disk" target="_blank">Large storage servers (HDD, 4TB+)</a></li>';
+            html += '<li><a href="index.html?benchmark_matched_only=true&best_deal=true" target="_blank">Best Deal Now (single best-value server)</a></li>';
+            html += '<li><a href="index.html?preset=home-nas&sort=price_per_gb_ram" target="_blank">Home NAS preset with RAM-value sort override</a></li>';
+            html += '</ul>';
+
+            document.getElementById('results').innerHTML = html;
+        }
+
+        // Run tests on page load
+        testURLSerialization();
+    </script>
+</body>
+</html>
