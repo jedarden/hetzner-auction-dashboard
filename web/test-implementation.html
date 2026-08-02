@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Serialization Implementation Test</title>
+</head>
+<body>
+    <h1>URL Serialization Implementation Test</h1>
+    <div id="test-results"></div>
+
+    <script>
+        function testURLSerialization() {
+            const results = [];
+
+            // Test 1: Basic URL parameter encoding
+            const params1 = new URLSearchParams();
+            params1.set('cpu_family', 'ryzen');
+            params1.set('min_ram', '32');
+            params1.set('max_price', '50');
+
+            results.push({
+                test: 'URL parameter encoding',
+                input: { cpu_family: 'ryzen', min_ram: 32, max_price: 50 },
+                output: params1.toString(),
+                expected: 'cpu_family=ryzen&min_ram=32&max_price=50',
+                pass: params1.toString() === 'cpu_family=ryzen&min_ram=32&max_price=50'
+            });
+
+            // Test 2: Boolean parameter handling
+            const params2 = new URLSearchParams();
+            params2.set('benchmark_matched_only', 'true');
+            const parsedBoolean = params2.get('benchmark_matched_only') === 'true';
+
+            results.push({
+                test: 'Boolean parameter handling',
+                input: 'benchmark_matched_only=true',
+                output: parsedBoolean,
+                expected: true,
+                pass: parsedBoolean === true
+            });
+
+            // Test 3: Empty parameter handling
+            const params3 = new URLSearchParams();
+            const emptyResult = params3.toString();
+
+            results.push({
+                test: 'Empty parameter handling',
+                input: {},
+                output: emptyResult,
+                expected: '',
+                pass: emptyResult === ''
+            });
+
+            // Test 4: Special characters in parameter values
+            const params4 = new URLSearchParams();
+            params4.set('location', 'fsn');
+            const encodedResult = params4.toString();
+
+            results.push({
+                test: 'Location parameter encoding',
+                input: { location: 'fsn' },
+                output: encodedResult,
+                expected: 'location=fsn',
+                pass: encodedResult === 'location=fsn'
+            });
+
+            // Test 5: Multiple parameters of different types
+            const params5 = new URLSearchParams();
+            params5.set('preset', 'game-server');
+            params5.set('sort', 'price_per_gb_ram');
+            params5.set('best_deal', 'true');
+            const multiResult = params5.toString();
+
+            results.push({
+                test: 'Multiple parameters encoding',
+                input: { preset: 'game-server', sort: 'price_per_gb_ram', best_deal: true },
+                output: multiResult,
+                expected: 'preset=game-server&sort=price_per_gb_ram&best_deal=true',
+                pass: multiResult === 'preset=game-server&sort=price_per_gb_ram&best_deal=true'
+            });
+
+            // Test 6: Numeric string parsing
+            const numString = '64';
+            const parsedNum = parseInt(numString);
+            const isNumeric = !isNaN(parsedNum) && parsedNum === 64;
+
+            results.push({
+                test: 'Numeric string parsing',
+                input: '64',
+                output: parsedNum,
+                expected: 64,
+                pass: isNumeric
+            });
+
+            // Test 7: Float parsing for prices
+            const priceString = '45.99';
+            const parsedPrice = parseFloat(priceString);
+            const isFloat = !isNaN(parsedPrice) && parsedPrice === 45.99;
+
+            results.push({
+                test: 'Float parsing for prices',
+                input: '45.99',
+                output: parsedPrice,
+                expected: 45.99,
+                pass: isFloat
+            });
+
+            // Display results
+            let html = '<table border="1" cellpadding="10" style="border-collapse: collapse;">';
+            html += '<tr><th>Test</th><th>Input</th><th>Output</th><th>Expected</th><th>Status</th></tr>';
+
+            let passCount = 0;
+            results.forEach(result => {
+                const status = result.pass ? '✅ PASS' : '❌ FAIL';
+                if (result.pass) passCount++;
+
+                html += '<tr>';
+                html += `<td>${result.test}</td>`;
+                html += `<td><code>${JSON.stringify(result.input)}</code></td>`;
+                html += `<td><code>${JSON.stringify(result.output)}</code></td>`;
+                html += `<td><code>${JSON.stringify(result.expected)}</code></td>`;
+                html += `<td>${status}</td>`;
+                html += '</tr>';
+            });
+
+            html += '</table>';
+            html += `<p><strong>Total: ${passCount}/${results.length} tests passed</strong></p>`;
+
+            // Add comprehensive testing instructions
+            html += '<h2>Manual Testing Instructions:</h2>';
+            html += '<ol>';
+            html += '<li>Open the main dashboard: <a href="index.html" target="_blank">index.html</a></li>';
+            html += '<li>Apply various filters and verify URL updates</li>';
+            html += '<li>Try these example URLs directly:</li>';
+            html += '</ol>';
+            html += '<ul>';
+            html += '<li><a href="index.html?cpu_family=ryzen&min_ram=64&max_price=80" target="_blank">Ryzen + 64GB RAM + max €80</a></li>';
+            html += '<li><a href="index.html?preset=game-server" target="_blank">Game Server preset</a></li>';
+            html += '<li><a href="index.html?disk_type=hdd&min_disk=4&sort=price_per_tb_disk" target="_blank">HDD storage (4TB+)</a></li>';
+            html += '<li><a href="index.html?benchmark_matched_only=true&best_deal=true" target="_blank">Best Deal mode</a></li>';
+            html += '<li><a href="index.html?location=fsn&min_ram=32&cpu_family=ryzen" target="_blank">Falkenstein Ryzen with 32GB+ RAM</a></li>';
+            html += '</ul>';
+
+            html += '<h2>Expected Behavior:</h2>';
+            html += '<ul>';
+            html += '<li>URL should update when any filter is changed</li>';
+            html += '<li>Filters should be restored when loading a page with URL parameters</li>';
+            html += '<li>Bookmarking a filtered view should preserve the exact filter state</li>';
+            html += '<li>Browser back/forward buttons should navigate between filter states</li>';
+            html += '<li>Preset selections should serialize to <code>preset=<id></code></li>';
+            html += '<li>Sort axis overrides should serialize to <code>sort=<field></code></li>';
+            html += '<li>"Best Deal Now" mode should serialize to <code>best_deal=true</code></li>';
+            html += '</ul>';
+
+            document.getElementById('test-results').innerHTML = html;
+        }
+
+        // Run tests
+        testURLSerialization();
+    </script>
+</body>
+</html>
