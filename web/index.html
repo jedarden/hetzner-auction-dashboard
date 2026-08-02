@@ -44,6 +44,60 @@
             font-size: 1rem;
         }
 
+        /* Best Deal Now Button */
+        .best-deal-container {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .best-deal-button {
+            background: linear-gradient(135deg, #228be6 0%, #1c7ed6 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(34, 139, 230, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .best-deal-button:hover {
+            background: linear-gradient(135deg, #1c7ed6 0%, #1971c2 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(34, 139, 230, 0.4);
+        }
+
+        .best-deal-button:active {
+            transform: translateY(0);
+        }
+
+        .best-deal-button.active {
+            background: linear-gradient(135deg, #2f9e44 0%, #2b8a3e 100%);
+            box-shadow: 0 4px 15px rgba(47, 158, 68, 0.3);
+        }
+
+        .best-deal-button.active:hover {
+            background: linear-gradient(135deg, #2b8a3e 0%, #23993d 100%);
+            box-shadow: 0 6px 20px rgba(47, 158, 68, 0.4);
+        }
+
+        .best-deal-icon {
+            font-size: 1.3rem;
+        }
+
+        .best-deal-description {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+
         /* Starter Configs Section */
         .starter-configs {
             background: white;
@@ -396,6 +450,15 @@
         <header>
             <h1>Hetzner Auction Dashboard</h1>
             <p class="subtitle">Find the best value in Hetzner's server auction with benchmark-based pricing</p>
+            <div class="best-deal-container">
+                <button class="best-deal-button" id="best-deal-now">
+                    <span class="best-deal-icon">⚡</span>
+                    <span>Best Deal Now</span>
+                </button>
+                <div class="best-deal-description" id="best-deal-description">
+                    Click to instantly show the single best-value server (highest benchmark value among scored listings)
+                </div>
+            </div>
         </header>
 
         <!-- Starter Configs -->
@@ -719,6 +782,67 @@
 
         let currentPreset = null;
         let userSortAxis = 'auto'; // 'auto' means use preset's default, otherwise specific sort field
+        let bestDealMode = false; // Track if we're showing only the best deal
+
+        // Find the single best-value listing (highest price_per_benchmark_point_multi among benchmark_matched=true)
+        function findBestDeal() {
+            const benchmarkMatchedListings = mockListings.filter(listing =>
+                listing.benchmark_matched === true &&
+                listing.price_per_benchmark_point_multi !== null
+            );
+
+            if (benchmarkMatchedListings.length === 0) {
+                return null;
+            }
+
+            // Sort by price_per_benchmark_point_multi ascending (lowest price per benchmark point = best value)
+            benchmarkMatchedListings.sort((a, b) =>
+                a.price_per_benchmark_point_multi - b.price_per_benchmark_point_multi
+            );
+
+            return benchmarkMatchedListings[0]; // Return the best deal
+        }
+
+        // Toggle best deal mode
+        function toggleBestDealMode() {
+            const button = document.getElementById('best-deal-now');
+            const description = document.getElementById('best-deal-description');
+
+            if (bestDealMode) {
+                // Exit best deal mode - restore previous view
+                bestDealMode = false;
+                button.classList.remove('active');
+                button.innerHTML = `
+                    <span class="best-deal-icon">⚡</span>
+                    <span>Best Deal Now</span>
+                `;
+                description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
+
+                // Restore normal filtering
+                filterAndSortListings();
+            } else {
+                // Enter best deal mode
+                const bestDeal = findBestDeal();
+
+                if (!bestDeal) {
+                    description.textContent = 'No benchmark-matched listings available. Try adjusting your filters.';
+                    return;
+                }
+
+                bestDealMode = true;
+                button.classList.add('active');
+                button.innerHTML = `
+                    <span class="best-deal-icon">✓</span>
+                    <span>Show All Results</span>
+                `;
+                description.textContent = `Showing the single best-value server: ${bestDeal.cpu_model} at €${bestDeal.price_effective_monthly.toFixed(2)}/month`;
+
+                // Display only the best deal
+                displayListings([bestDeal]);
+                document.getElementById('results-count').textContent = '1 (Best Deal)';
+                document.getElementById('current-sort').textContent = 'Best Value (multi-thread)';
+            }
+        }
 
         // Initialize starter configs UI
         function initStarterConfigs() {
@@ -1029,6 +1153,18 @@
             const element = document.getElementById(id);
             if (element) {
                 element.addEventListener('change', () => {
+                    // Exit best deal mode when filters are manually changed
+                    if (bestDealMode) {
+                        bestDealMode = false;
+                        const button = document.getElementById('best-deal-now');
+                        const description = document.getElementById('best-deal-description');
+                        button.classList.remove('active');
+                        button.innerHTML = `
+                            <span class="best-deal-icon">⚡</span>
+                            <span>Best Deal Now</span>
+                        `;
+                        description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
+                    }
                     // Clear preset selection when filters are manually changed
                     if (currentPreset) {
                         currentPreset = null;
@@ -1044,9 +1180,24 @@
         // Reset button
         document.getElementById('reset-filters').addEventListener('click', resetFilters);
 
+        // Best Deal Now button
+        document.getElementById('best-deal-now').addEventListener('click', toggleBestDealMode);
+
         // Sort axis selector
         document.getElementById('sort-axis').addEventListener('change', (e) => {
             userSortAxis = e.target.value;
+            // Exit best deal mode when user changes sort axis
+            if (bestDealMode) {
+                bestDealMode = false;
+                const button = document.getElementById('best-deal-now');
+                const description = document.getElementById('best-deal-description');
+                button.classList.remove('active');
+                button.innerHTML = `
+                    <span class="best-deal-icon">⚡</span>
+                    <span>Best Deal Now</span>
+                `;
+                description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
+            }
             // Clear preset selection when user manually chooses sort axis
             if (currentPreset) {
                 currentPreset = null;
