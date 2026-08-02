@@ -1479,8 +1479,13 @@
     </script>
     <script src="snapshot-diff.js"></script>
     <script>
+        // Snapshot diff integration
+        let diffInitialized = false;
+
         // Initialize snapshot diff functionality when DOM is loaded
-        document.addEventListener('DOMContentLoaded', async () => {
+        async function initializeSnapshotDiff() {
+            if (diffInitialized) return;
+
             try {
                 // Initialize the snapshot diff manager
                 await snapshotDiffManager.initialize();
@@ -1491,28 +1496,77 @@
                 await snapshotDiffManager.processCurrentListings(mockListings);
                 console.log('Snapshot diff analysis complete');
 
+                diffInitialized = true;
+
+                // Set up periodic diff refresh (every 5 minutes)
+                setInterval(async () => {
+                    try {
+                        await snapshotDiffManager.processCurrentListings(mockListings);
+                        console.log('Snapshot diff refreshed');
+                    } catch (error) {
+                        console.error('Failed to refresh diff:', error);
+                    }
+                }, 5 * 60 * 1000); // 5 minutes
+
             } catch (error) {
                 console.error('Failed to initialize snapshot diff:', error);
+                // Don't throw - allow the app to continue without diff functionality
             }
-        });
+        }
 
-        // Update the staleness function to also refresh diff
-        const originalUpdateStaleness = updateStaleness;
-        updateStaleness = async function() {
-            originalUpdateStaleness();
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSnapshotDiff);
+        } else {
+            initializeSnapshotDiff();
+        }
 
-            // Every few minutes, also refresh the diff with current data
-            // In production, this would reload the latest Parquet data first
-            if (Math.random() < 0.1) { // 10% chance each staleness update
+        // Also initialize after any data refresh
+        const originalFilterAndSort = filterAndSortListings;
+        filterAndSortListings = function(...args) {
+            const result = originalFilterAndSort.apply(this, args);
+
+            // Refresh diff after filtering/sorting
+            if (diffInitialized) {
+                snapshotDiffManager.processCurrentListings(mockListings).catch(err => {
+                    console.error('Failed to update diff after filter:', err);
+                });
+            }
+
+            return result;
+        };
+
+        // Add manual diff refresh for testing
+        async function manualDiffRefresh() {
+            if (!diffInitialized) {
+                await initializeSnapshotDiff();
+            }
+
+            try {
+                await snapshotDiffManager.processCurrentListings(mockListings);
+                alert('Diff data refreshed successfully!');
+            } catch (error) {
+                alert('Failed to refresh diff: ' + error.message);
+            }
+        }
+
+        // Add reset function for testing
+        async function resetSnapshotDiff() {
+            if (confirm('This will clear all stored snapshot data. Continue?')) {
                 try {
-                    await snapshotDiffManager.processCurrentListings(mockListings);
-                    // Also refresh Cloud pricing comparison
-                    await loadCloudPricing();
-                    filterAndSortListings();
+                    await snapshotDiffManager.reset();
+                    alert('Snapshot diff reset successfully. Please refresh the page.');
                 } catch (error) {
-                    console.error('Failed to refresh diff:', error);
+                    alert('Failed to reset diff: ' + error.message);
                 }
             }
+        }
+
+        // Expose to window for debugging
+        window.snapshotDiffDebug = {
+            refresh: manualDiffRefresh,
+            reset: resetSnapshotDiff,
+            manager: snapshotDiffManager
         };
     </script>
 </body>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Config Signature Generation</title>
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .test { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+        .pass { background: #c8e6c9; }
+        .fail { background: #ffcdd2; }
+    </style>
+</head>
+<body>
+    <h1>Config Signature Generation Test</h1>
+    <div id="results"></div>
+
+    <script src="snapshot-diff.js"></script>
+    <script>
+        const results = document.getElementById('results');
+
+        function test(name, listing, expectedSignature) {
+            const signature = generateConfigSignature(listing);
+            const pass = signature === expectedSignature;
+            const div = document.createElement('div');
+            div.className = 'test ' + (pass ? 'pass' : 'fail');
+            div.innerHTML = `
+                <strong>${name}</strong><br>
+                Expected: ${expectedSignature}<br>
+                Got: ${signature}<br>
+                ${pass ? '✓ PASS' : '✗ FAIL'}
+            `;
+            results.appendChild(div);
+        }
+
+        // Test 1: Basic listing with TB
+        test('Basic listing with TB', {
+            cpu_model: 'Ryzen 9 5950X',
+            ram_gb: 128,
+            disks: [{ type: 'nvme', size_tb: 2 }],
+            location: 'fsn'
+        }, 'ryzen 9 5950x|128gb|nvme:1x2000GB|fsn');
+
+        // Test 2: Basic listing with GB
+        test('Basic listing with GB', {
+            cpu_model: 'Intel Xeon E5-2680 v4',
+            ram_gb: 64,
+            disks: [{ type: 'hdd', count: 4, size_gb: 1000 }],
+            location: 'nbg'
+        }, 'xeon e5-2680 v4|64gb|hdd:4x1000GB|nbg');
+
+        // Test 3: Multiple disks
+        test('Multiple disks', {
+            cpu_model: 'AMD Ryzen 7 5800X',
+            ram_gb: 64,
+            disks: [
+                { type: 'nvme', size_tb: 1 },
+                { type: 'hdd', size_tb: 4 }
+            ],
+            location: 'fsn'
+        }, 'ryzen 7 5800x|64gb|hdd:1x4000GB,nvme:1x1000GB|fsn');
+
+        // Test 4: CPU normalization
+        test('CPU normalization', {
+            cpu_model: 'AMD (R) Ryzen (TM) 9 5950X',
+            ram_gb: 128,
+            disks: [{ type: 'nvme', size_tb: 2 }],
+            location: 'fsn'
+        }, 'ryzen 9 5950x|128gb|nvme:1x2000GB|fsn');
+
+        // Test 5: Unknown location
+        test('Unknown location', {
+            cpu_model: 'Ryzen 9 5950X',
+            ram_gb: 128,
+            disks: [{ type: 'nvme', size_tb: 2 }],
+            location: null
+        }, 'ryzen 9 5950x|128gb|nvme:1x2000GB|unknown');
+    </script>
+</body>
+</html>
