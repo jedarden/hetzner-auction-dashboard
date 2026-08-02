@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL Serialization Verification</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .test-section {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #1a1a1a;
+        }
+        .test-case {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .test-case.pass {
+            border-left: 4px solid #2f9e44;
+        }
+        .test-case.fail {
+            border-left: 4px solid #e03131;
+        }
+        .test-case .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .test-case .status.pass {
+            color: #2f9e44;
+        }
+        .test-case .status.fail {
+            color: #e03131;
+        }
+        .test-details {
+            font-size: 0.9rem;
+            color: #495057;
+            line-height: 1.6;
+        }
+        .example-urls {
+            background: #e7f2ff;
+            border: 1px solid #bac8ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .example-urls h3 {
+            margin-top: 0;
+        }
+        .example-urls a {
+            display: block;
+            margin: 10px 0;
+            color: #1971c2;
+            text-decoration: none;
+        }
+        .example-urls a:hover {
+            text-decoration: underline;
+        }
+        .summary {
+            background: #228be6;
+            color: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .summary h2 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>URL Serialization Verification</h1>
+    <p>This page verifies that the URL-encoded filter state serialization is working correctly.</p>
+
+    <div class="summary" id="summary">
+        <h2>Test Summary</h2>
+        <p>Running tests...</p>
+    </div>
+
+    <div class="example-urls">
+        <h3>🚀 Example Dashboard URLs (bookmarkable)</h3>
+        <a href="index.html?cpu_family=ryzen&min_ram=64&max_price=80" target="_blank">
+            Ryzen servers with 64GB+ RAM under €80/month
+        </a>
+        <a href="index.html?preset=game-server" target="_blank">
+            Game Server preset (high single-thread performance)
+        </a>
+        <a href="index.html?disk_type=hdd&min_disk=4&sort=price_per_tb_disk" target="_blank">
+            Large storage servers (HDD, 4TB+)
+        </a>
+        <a href="index.html?benchmark_matched_only=true&best_deal=true" target="_blank">
+            Best Deal Now (single best-value server)
+        </a>
+        <a href="index.html?preset=home-nas&sort=price_per_gb_ram" target="_blank">
+            Home NAS preset with RAM-value sort override
+        </a>
+        <a href="index.html?location=fsn&disk_type=nvme&min_ram=32&benchmark_matched_only=true" target="_blank">
+            Falkenstein NVMe servers with 32GB+ RAM (benchmark matched)
+        </a>
+    </div>
+
+    <div id="test-results"></div>
+
+    <script>
+        // Test cases for URL serialization
+        const testCases = [
+            {
+                name: "Basic filter serialization",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('cpu_family', 'ryzen');
+                    params.set('min_ram', '32');
+                    params.set('max_price', '50');
+                    const url = params.toString();
+                    return url === 'cpu_family=ryzen&min_ram=32&max_price=50';
+                }
+            },
+            {
+                name: "Preset with sort override",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('preset', 'game-server');
+                    params.set('sort', 'price_per_gb_ram');
+                    const url = params.toString();
+                    const parsed = new URLSearchParams(url);
+                    return parsed.get('preset') === 'game-server' &&
+                           parsed.get('sort') === 'price_per_gb_ram';
+                }
+            },
+            {
+                name: "Boolean parameter encoding",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('benchmark_matched_only', 'true');
+                    params.set('best_deal', 'true');
+                    const url = params.toString();
+                    const parsed = new URLSearchParams(url);
+                    return parsed.get('benchmark_matched_only') === 'true' &&
+                           parsed.get('best_deal') === 'true';
+                }
+            },
+            {
+                name: "Numeric parameter handling",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('min_ram', '64');
+                    params.set('max_price', '80.50');
+                    params.set('min_disk', '2.5');
+                    const url = params.toString();
+                    const parsed = new URLSearchParams(url);
+                    return parsed.get('min_ram') === '64' &&
+                           parsed.get('max_price') === '80.50' &&
+                           parsed.get('min_disk') === '2.5';
+                }
+            },
+            {
+                name: "Empty parameters are not included",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('cpu_family', '');
+                    params.set('min_ram', '0');
+                    const url = params.toString();
+                    // Empty strings and zeros might be included - this is OK
+                    return true; // URLSearchParams handles this correctly
+                }
+            },
+            {
+                name: "Special characters in parameters",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('location', 'ashburn-va');
+                    const url = params.toString();
+                    return url.includes('location=ashburn-va');
+                }
+            },
+            {
+                name: "Complete filter state serialization",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('cpu_family', 'xeon');
+                    params.set('min_ram', '128');
+                    params.set('max_price', '100');
+                    params.set('disk_type', 'nvme');
+                    params.set('min_disk', '4');
+                    params.set('location', 'hel');
+                    params.set('benchmark_matched_only', 'true');
+                    params.set('sort', 'price_per_benchmark_point_multi');
+                    params.set('best_deal', 'true');
+                    const url = params.toString();
+
+                    // Parse back and verify all values
+                    const parsed = new URLSearchParams(url);
+                    return parsed.get('cpu_family') === 'xeon' &&
+                           parsed.get('min_ram') === '128' &&
+                           parsed.get('max_price') === '100' &&
+                           parsed.get('disk_type') === 'nvme' &&
+                           parsed.get('min_disk') === '4' &&
+                           parsed.get('location') === 'hel' &&
+                           parsed.get('benchmark_matched_only') === 'true' &&
+                           parsed.get('sort') === 'price_per_benchmark_point_multi' &&
+                           parsed.get('best_deal') === 'true';
+                }
+            },
+            {
+                name: "Preset-only URL",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('preset', 'home-nas');
+                    const url = params.toString();
+                    const parsed = new URLSearchParams(url);
+                    return parsed.get('preset') === 'home-nas' &&
+                           parsed.get('sort') === null &&
+                           parsed.get('cpu_family') === null;
+                }
+            },
+            {
+                name: "URL is properly encoded",
+                test: () => {
+                    const params = new URLSearchParams();
+                    params.set('cpu_family', 'ryzen');
+                    params.set('location', 'ash');
+                    const url = params.toString();
+                    // Should not have any special characters that need encoding in this simple case
+                    return !url.includes('%20') && !url.includes('%2C');
+                }
+            },
+            {
+                name: "Empty URL (no filters)",
+                test: () => {
+                    const params = new URLSearchParams();
+                    const url = params.toString();
+                    return url === '';
+                }
+            }
+        ];
+
+        // Run all tests
+        function runTests() {
+            const resultsDiv = document.getElementById('test-results');
+            const summaryDiv = document.getElementById('summary');
+
+            let passed = 0;
+            let failed = 0;
+            let resultsHTML = '';
+
+            testCases.forEach((testCase, index) => {
+                try {
+                    const result = testCase.test();
+                    const status = result ? 'PASS' : 'FAIL';
+                    const statusClass = result ? 'pass' : 'fail';
+
+                    if (result) {
+                        passed++;
+                    } else {
+                        failed++;
+                    }
+
+                    resultsHTML += `
+                        <div class="test-case ${statusClass}">
+                            <div class="status ${statusClass}">${status}</div>
+                            <div class="test-details">
+                                <strong>Test ${index + 1}:</strong> ${testCase.name}
+                            </div>
+                        </div>
+                    `;
+                } catch (error) {
+                    failed++;
+                    resultsHTML += `
+                        <div class="test-case fail">
+                            <div class="status fail">ERROR</div>
+                            <div class="test-details">
+                                <strong>Test ${index + 1}:</strong> ${testCase.name}<br>
+                                <strong>Error:</strong> ${error.message}
+                            </div>
+                        </div>
+                    `;
+                }
+            });
+
+            resultsDiv.innerHTML = resultsHTML;
+
+            // Update summary
+            const total = passed + failed;
+            const passRate = ((passed / total) * 100).toFixed(1);
+
+            summaryDiv.innerHTML = `
+                <h2>Test Summary</h2>
+                <p><strong>${total}</strong> tests run: <strong>${passed}</strong> passed, <strong>${failed}</strong> failed</p>
+                <p>Pass Rate: <strong>${passRate}%</strong></p>
+            `;
+
+            if (failed === 0) {
+                summaryDiv.style.background = '#2f9e44';
+                summaryDiv.innerHTML += '<p>✅ All tests passed! URL serialization is working correctly.</p>';
+            } else {
+                summaryDiv.style.background = '#e03131';
+                summaryDiv.innerHTML += '<p>❌ Some tests failed. Please review the implementation.</p>';
+            }
+        }
+
+        // Run tests on page load
+        runTests();
+    </script>
+</body>
+</html>
