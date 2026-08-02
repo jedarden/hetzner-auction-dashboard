@@ -31,14 +31,15 @@ This project's differentiation, in priority order: **(a)** treat the benchmark j
 ### Scenario 1: Happy Path — Filter by CPU Family + RAM
 **Setup:** Pipeline has published a current Parquet snapshot; the dashboard is loaded in a browser.
 **Action:** User sets a CPU-family filter (e.g. "Ryzen") and a minimum-RAM filter (e.g. ≥64GB), leaving everything else at defaults.
-**Expected:** Results show only matching listings, sorted by `price_per_benchmark_point` ascending (the default sort); any listing with `benchmark_matched = false` is visibly flagged as unscored rather than sorted to the bottom or omitted.
+**Expected:** Results show only matching listings, sorted by `price_per_benchmark_point_multi` ascending with `NULLS FIRST` (the default sort); any listing with `benchmark_matched = false` has a NULL `price_per_benchmark_point_multi` (and NULL `price_per_benchmark_point_single`) and therefore sorts to the top of the results, visibly flagged as unscored rather than blended in at the bottom or omitted.
 **Pass criteria:**
 - Filtered set matches only listings satisfying both filters
-- Default sort order is `price_per_benchmark_point` ascending
-- Unscored listings appear with an explicit "unscored" indicator, never blank or omitted
+- Default sort order is `price_per_benchmark_point_multi` ascending, `NULLS FIRST`
+- Unscored listings appear with an explicit "unscored" indicator, grouped at the top of the results, never blank or omitted
 **Fail criteria:**
 - An unscored listing is silently dropped from results
-- Default sort is raw price instead of `price_per_benchmark_point`
+- Default sort is raw price instead of `price_per_benchmark_point_multi`
+- Unscored listings sort to the bottom of the results (NULLS LAST) or are scattered among scored listings instead of grouped at the top
 
 ### Scenario 2: Degraded — Hetzner Feed Unreachable
 **Setup:** A scheduled 10-minute pipeline run starts; Hetzner's auction feed endpoint times out or errors.
@@ -76,11 +77,11 @@ Two independent halves connected only by a Parquet file:
 
 - Fetches current listings from Hetzner's public Server Auction data feed every **10 minutes**. Hetzner doesn't document a fixed update schedule (price drops happen at randomized intervals by design), so this matches the practical cadence third-party tools converge on — frequent enough to catch price drops and new listings without hammering the endpoint.
 - Normalizes each listing's free-text CPU name and matches it against a maintained CPU benchmark reference table (see Benchmark Strategy). Matching is fuzzy/alias-based with a manual-override list for CPUs that don't match cleanly — this is the part expected to need ongoing curation, not the dashboard code itself.
-- Computes derived cost fields for every listing: price per benchmark point, price per GB RAM, price per TB disk, effective total monthly cost.
+- Computes derived cost fields for every listing: effective total monthly cost (`price_effective_monthly`, folding in the setup fee — see Data Models for the formula), then price per benchmark point — single-thread and multi-thread computed and stored separately, never blended (see ADR-3) — price per GB RAM, and price per TB disk (see Data Models for each formula).
 - Writes ONE denormalized Parquet file — no relational structure, every column a query might filter/sort on is already present.
 - Publishes the Parquet file to **Cloudflare R2** (native CORS + HTTP range-request support, required for DuckDB-WASM to do partial reads instead of downloading the whole file on every page load). Chosen over self-hosting on Garage/SeaweedFS to avoid standing up public HTTPS ingress for what's otherwise a personal tool, and it matches Server Radar's proven architecture for this exact use case. Requires an R2 API token stored as a cluster secret (OpenBao/ExternalSecret, matching existing patterns) for the pipeline to push to.
 - Runs as a long-lived Deployment with an internal refresh loop (house rule: no Job/CronJob) on a Rackspace Spot cluster, wired through GitOps (`jedarden/declarative-config`, `k8s/` path) — never a live kubectl mutation. Compute (pipeline) and hosting (R2/Pages) are intentionally decoupled: the cluster only needs egress to Cloudflare's API, nothing is served from cluster ingress.
-- **Format verification.** Before the pipeline depends on it in production, the chosen Parquet writer's output is confirmed compatible with DuckDB-WASM's httpfs range-request reads via the conformance test in Testing Strategy — checked once ahead of Phase 4/5, not re-verified every run.
+- **Format verification.** Before the pipeline depends on it in production, the chosen Parquet writer's output is confirmed compatible with DuckDB-WASM's httpfs range-request reads via the conformance test in Testing Strategy — checked once by the end of Phase 3 (see Phase 3 completion criteria and Testing Strategy), not re-verified every run and not deferred to Phase 4 or 5.
 - **Operational visibility.** The pipeline logs the timestamp of its last successful publish, so a stalled pipeline is visible without needing the dashboard open — the same `fetched_at` value the client already surfaces as a staleness indicator, just also checked from the pipeline side.
 
 ### Pipeline Run Lifecycle
@@ -89,7 +90,7 @@ Every run — both the v1 current-snapshot file and, later, each v2 history file
 
 1. **Fetch** — pull current listings from Hetzner's auction feed.
 2. **Normalize/match** — clean CPU strings, resolve against `benchmark-map/`, flag unmatched.
-3. **Compute** — derive `price_per_benchmark_point`, `price_per_gb_ram`, `price_per_tb_disk`, effective monthly cost.
+3. **Compute** — derive `price_effective_monthly` first (see Data Models for the setup-fee formula), then `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk` (see Data Models for each formula).
 4. **Write to a temp key in R2** — never write directly to the live key the client reads.
 5. **Verify** — confirm the temp object is readable and structurally sane (non-zero size, parses as valid Parquet) before it's allowed to become live.
 6. **Atomic swap** — promote the temp key to the live key (copy-then-delete-old, since R2/S3-compatible storage has no native rename; the old key is only deleted after the new one is confirmed in place).
@@ -123,7 +124,7 @@ Decision: publish the Parquet file to Cloudflare R2. Rationale: native CORS + HT
 Decision: source CPU benchmark scores exclusively from PassMark in v1. Rationale: matches the proven approach of every existing implementation (Auction Browser+, hzfind, Server Auction Tracker) — no reason to start anywhere less-validated, and it keeps the matching pipeline to one schema instead of reconciling multiple sources upfront. Rejected alternative: launching with multi-source cross-validation (Geekbench/YABS) from day one — rejected because it multiplies matching complexity before the single-source join is even proven solid. Invalidation trigger: if unmatched-CPU coverage gaps stay persistently high after the override list has had a real chance to mature, promote the v2 cross-validation candidate ahead of schedule.
 
 **ADR-3: Separate per-resource value metrics instead of one blended score.**
-Decision: expose `price_per_benchmark_point`, `price_per_gb_ram`, and `price_per_tb_disk` as independent columns rather than a single weighted "Total Score." Rationale: a fixed arbitrary weighting (as Auction Browser+ and Server Auction Tracker do) hides the number that matters most for a given buyer's use case; separate, sortable columns let the user decide what to prioritize. Rejected alternative: a blended 0–100 score like the existing tools — rejected because it's exactly the category weakness this project differentiates against (see Competitive Positioning). Invalidation trigger: if personal usage shows a blended score would genuinely save filtering effort without hiding anything, reconsider it as an optional additional column — never as a replacement for the separate metrics.
+Decision: expose `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` as independent columns rather than a single weighted "Total Score." The same reasoning applies one level deeper, inside the benchmark metric itself: single-thread and multi-thread PassMark scores are two independent CPU-performance axes, so `price_per_benchmark_point` is split into `_single` and `_multi` variants rather than picked-or-blended into one number. `price_per_benchmark_point_multi` is the default sort (see Client Dashboard Scope) since most Hetzner auction hardware is multi-core server-class and PassMark's own primary CPU Mark rating is multi-thread-based, but `_single` stays equally queryable for buyers who weight single-core workloads more. Rationale: a fixed arbitrary weighting (as Auction Browser+ and Server Auction Tracker do) hides the number that matters most for a given buyer's use case; separate, sortable columns let the user decide what to prioritize. Rejected alternative: a blended 0–100 score like the existing tools, and — one level deeper — a fixed-weight single/multi blend; both rejected for the same reason, the exact category weakness this project differentiates against (see Competitive Positioning). Invalidation trigger: if personal usage shows a blended score would genuinely save filtering effort without hiding anything, reconsider it as an optional additional column — never as a replacement for the separate metrics.
 
 ## Components
 
@@ -138,7 +139,7 @@ This is the part of the project that actually matters (see `docs/notes/benchmark
 
 - **Source (v1):** PassMark single- and multi-thread scores, matching the proven approach of every existing implementation. No reason to start anywhere less-validated.
 - **Matching:** raw CPU string → normalized model name → PassMark ID, via an alias table for naming variants (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4") plus a manual override list for anything that doesn't match cleanly.
-- **No blended score.** Deliberately do *not* build an Auction-Browser+/Server-Auction-Tracker-style single weighted "Total Score." Expose `price_per_benchmark_point`, `price_per_gb_ram`, and `price_per_tb_disk` as independent, separately sortable/filterable columns (closer to hzfind's approach). A fixed arbitrary weighting hides the number that matters most; separate columns let the user decide what to prioritize.
+- **No blended score.** Deliberately do *not* build an Auction-Browser+/Server-Auction-Tracker-style single weighted "Total Score" — and don't blend single-thread and multi-thread PassMark scores into one figure either. Expose `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` as independent, separately sortable/filterable columns (closer to hzfind's approach). A fixed arbitrary weighting hides the number that matters most; separate columns let the user decide what to prioritize. `price_per_benchmark_point_multi` is the default sort (see Client Dashboard Scope) since PassMark's own primary CPU Mark rating is multi-thread-based and most auction hardware is multi-core server-class; `_single` remains independently available for single-core-sensitive workloads.
 - **Unmatched CPUs are surfaced, never guessed.** A listing whose CPU has no benchmark match gets a `NULL` score and an explicit "unscored" state in the UI — it is never silently dropped or given a default/estimated value. The pipeline writes an unmatched-CPU report each run so the override list can be extended; coverage gaps are the main way this project can fail quietly, so they need to stay visible.
 - **v2 candidate (not v1):** cross-validate/extend PassMark coverage using the disconnected community benchmark data that already exists for Hetzner auction hardware (Geekbench Browser, VPSBenchmarks, BareMetalBench results posted after-the-fact by buyers). No existing tool mines this back into a live feed — it's a real opportunity, but out of scope until the PassMark-only v1 is solid.
 
@@ -147,12 +148,12 @@ This is the part of the project that actually matters (see `docs/notes/benchmark
 Single flat table, one row per auction listing:
 
 - `listing_id`, `datacenter`, `location`, `available_from`
-- `cpu_raw`, `cpu_normalized`, `cpu_benchmark_single`, `cpu_benchmark_multi`, `benchmark_matched` (bool), `benchmark_match_confidence`
+- `cpu_raw`, `cpu_normalized`, `cpu_benchmark_single`, `cpu_benchmark_multi`, `benchmark_matched` (bool)
 - `ram_gb`, `ram_ecc`
-- `disks` (type: HDD/SSD/NVMe, count, capacity per disk)
+- `disks`: `LIST<STRUCT{type: HDD/SSD/NVMe, count, capacity_gb}>` — one struct per distinct disk type/size group in the listing (e.g. a 2×NVMe + 2×HDD listing produces two structs), not fixed slot-columns; keeps a single denormalized row per listing while still representing variable, mixed disk configurations
 - `uplink_speed`
-- `price_base`, `price_setup_fee`, `price_effective_monthly`
-- derived: `price_per_benchmark_point`, `price_per_gb_ram`, `price_per_tb_disk`
+- `price_base`, `price_setup_fee`, `price_effective_monthly` (= `price_base` + `price_setup_fee` — the setup fee is folded in at full value rather than amortized over an assumed contract length, since Hetzner auction listings carry no stated minimum term, checked against `docs/research/existing-tools.md`, which doesn't document one either. Treating month one as the conservative baseline avoids inventing a commitment length the buyer hasn't made — a deliberate modeling choice, not a Hetzner-stated fact.)
+- derived: `price_per_benchmark_point_single`, `price_per_benchmark_point_multi` (each = `price_effective_monthly` ÷ the matching raw PassMark score; NULL when `benchmark_matched = false`; kept as two independent columns rather than one blended figure, per ADR-3 — `price_per_benchmark_point_multi` is the default sort, see Client Dashboard Scope), `price_per_gb_ram` (= `price_effective_monthly` ÷ `ram_gb`), `price_per_tb_disk` (= `price_effective_monthly` ÷ total disk capacity summed across every `disks` struct regardless of type — no per-type weighting, just the raw total, per ADR-3)
 - `fetched_at` (staleness display in the UI)
 
 This schema is the actual interface contract between the two halves of the system — the pipeline is the only writer, the client is the only reader, and neither side reads/writes anything else. Removing or renaming a column, or changing a column's type or unit (e.g. switching `price_base` from cents to a different currency unit), is a breaking change and needs the client updated in lockstep. Adding a new column is always safe — the client's SQL only ever references columns it already knows about, so an extra column is invisible until the UI is updated to use it.
@@ -166,7 +167,7 @@ This schema is the actual interface contract between the two halves of the syste
 | EC-1 | Empty feed result | Hetzner's feed returns zero listings for a run | Publish it if the response was well-formed (an empty auction is real, e.g. between drops); if malformed/error instead, abort per Pipeline Run Lifecycle and keep the last snapshot |
 | EC-2 | Feed schema change | Hetzner changes the shape/fields of the auction feed response | Fail closed: abort the run, log the parse error with a sample of the raw payload, keep serving the last snapshot until the pipeline's parser is updated for the new shape |
 | EC-3 | Ambiguous CPU match | A raw `cpu_raw` string matches more than one benchmark-map entry | Do not guess — treat as unmatched (`benchmark_matched = false`) and add to the unmatched-CPU report for manual override-list resolution, same as a zero-match case |
-| EC-4 | Listing ID reuse | Hetzner's `listing_id` reappears across ticks with different specs | Assumption: `listing_id` is unique within a single run but is NOT assumed stable in meaning across ticks — the pipeline never carries state keyed by `listing_id` between runs. If this assumption is wrong, v1's exposure is limited (no history yet), and v2's config-signature key deliberately sidesteps it, since that key already assumes listing IDs get reused |
+| EC-4 | Listing ID reuse | Hetzner's `listing_id` reappears across ticks with different specs | Assumption: `listing_id` is unique within a single run but is NOT assumed stable in meaning across ticks — the pipeline never carries state keyed by `listing_id` between runs. If this assumption is wrong, v1's exposure is limited (no history yet), and v2's config-signature key deliberately sidesteps it, since that key never relies on `listing_id` as a stable identifier at all — it's keyed on CPU + RAM + disk + datacenter precisely because `listing_id` isn't assumed stable across ticks (see v2 Historical Stats, where the same config reappears under a new `listing_id` each cycle) |
 | EC-5 | Truncated/corrupt publish | R2 accepts the temp-key write but the resulting object is truncated or unreadable | Caught by the verify step in Pipeline Run Lifecycle before swap — a temp object that doesn't parse as valid Parquet never gets promoted to the live key |
 | EC-6 | Uncached Parquet range request | Client requests a byte range the CDN hasn't cached yet | Falls back to an R2 origin fetch for that range (normal cache-miss behavior) — slightly slower first load after each publish, not a correctness issue |
 
@@ -205,8 +206,8 @@ Two distinct "something's wrong" states the client can be in, and what the user 
 Search/filter/sort only, over the current snapshot — no history, no alerts, no comparison view, no auto-buy. These are all proven features elsewhere (see research) that can be layered on later without changing the core architecture; v1 stays scoped to nailing the benchmark join and a clean filter/sort experience on top of it.
 
 - Filters: price, RAM, disk type/size, CPU model, location/datacenter, ECC, benchmark-matched-only toggle.
-- Sorts: any column, including all three per-resource value metrics independently (not just price).
-- Default sort: `price_per_benchmark_point` ascending — reinforces that benchmark-adjusted value, not raw price, is the point.
+- Sorts: any column, including all four per-resource value metrics independently (not just price) — `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk`.
+- Default sort: `price_per_benchmark_point_multi` ascending, `NULLS FIRST` — multi-thread is the default because most Hetzner auction hardware is multi-core server-class and PassMark's own primary CPU Mark rating is multi-thread-based; `price_per_benchmark_point_single` remains an equally first-class, independently sortable column for buyers who weight single-core workloads more (see ADR-3). NULLS FIRST reinforces that benchmark-adjusted value, not raw price, is the point, and puts unscored listings (NULL `price_per_benchmark_point_multi`) at the top of the results instead of the bottom, keeping benchmark-map coverage gaps visible rather than easy to miss.
 - Staleness indicator driven by `fetched_at`.
 
 ### Performance Ceiling
@@ -216,7 +217,7 @@ Search/filter/sort only, over the current snapshot — no history, no alerts, no
 ## Testing Strategy
 
 - **CPU-matching fixture set.** A curated set of real Hetzner auction CPU strings, including known-tricky variants (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4", differing whitespace/casing, a family with no benchmark entry at all), each asserted against its expected PassMark match — or explicit `benchmark_matched = false` for the intentionally-unmatchable ones. This is the project's core heuristic logic (see Benchmark Strategy), so it's the one place this kind of test pays for itself; everywhere else in this project is comparatively low-risk.
-- **Parquet/DuckDB-WASM conformance test.** Before Phase 5 begins, a round-trip test writes a sample Parquet file with the pipeline's chosen writer and confirms DuckDB-WASM can actually load and query it via httpfs range requests — the one hand-off point between the two halves of the architecture where "should work in theory" isn't good enough.
+- **Parquet/DuckDB-WASM conformance test.** Before Phase 3 is considered complete, a round-trip test writes a sample Parquet file with the pipeline's chosen writer and confirms DuckDB-WASM can actually load and query it via httpfs range requests — the one hand-off point between the two halves of the architecture where "should work in theory" isn't good enough. Gated at Phase 3, not later, so neither Phase 4's R2 publish infrastructure nor Phase 5's client UI gets built on top of an unverified file format.
 - **Definition of done.** Before considering the pipeline or client phase complete: the CPU-matching fixture suite and the Parquet/DuckDB-WASM conformance test both pass. No CI-gated benchmark infrastructure beyond that — this is a solo hobby project, not a system with a regression budget to enforce.
 
 ## Security
@@ -247,10 +248,11 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   - Unmatched-CPU report is generated and lists every unresolved CPU seen in the fixture set
 
 - [ ] **Phase 3: Cost-metric computation + Parquet writer**
-  Delivers: `price_per_benchmark_point`, `price_per_gb_ram`, `price_per_tb_disk`, and effective monthly cost computed per listing, written to a single flat Parquet file.
+  Delivers: `price_effective_monthly`, `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` computed per listing, written to a single flat Parquet file.
   Completion criteria:
-  - All three per-resource metrics compute correctly against a fixture set of known listings, including one with `benchmark_matched = false` (metric is NULL, never a divide-by-zero or fallback estimate)
-  - Parquet writer's output passes the DuckDB-WASM httpfs conformance test (Testing Strategy)
+  - `price_effective_monthly` computes correctly against a fixture set (`price_base` + `price_setup_fee`, per Data Models' amortization note), including one listing with a non-zero `price_setup_fee` and one with zero, confirming the fee folds in only when present
+  - All four per-resource metrics (`price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk`) compute correctly against a fixture set of known listings, including one with `benchmark_matched = false` (both benchmark-point metrics are NULL, never a divide-by-zero or fallback estimate)
+  - Parquet writer's output passes the DuckDB-WASM httpfs conformance test (Testing Strategy) — required for Phase 3 to be considered complete, since Phase 4's R2 publish and Phase 5's client UI both build on an assumed-working file format
 
 - [ ] **Phase 4: R2 bucket + API token (secret via OpenBao/ExternalSecret) + refresh-loop Deployment via declarative-config**
   Delivers: a running pipeline Deployment (`replicas: 1`, GitOps-managed) that fetches, computes, and publishes to R2 on the 10-minute cadence using the full temp-key-then-swap lifecycle.
@@ -263,7 +265,7 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   Delivers: the static `web/` site that loads the published Parquet file via DuckDB-WASM httpfs and implements all Client Dashboard Scope (v1) filters/sorts.
   Completion criteria:
   - Dashboard loads a real published snapshot and returns correct filtered/sorted results for each filter type in scope
-  - Default sort is `price_per_benchmark_point` ascending; unscored listings are visibly flagged, not hidden
+  - Default sort is `price_per_benchmark_point_multi` ascending, `NULLS FIRST`; unscored listings are visibly flagged and grouped at the top of the results, not hidden or sorted to the bottom
   - A simulated load failure (bad URL) shows the Graceful Degradation error state, not a blank page
 
 - [ ] **Phase 6: Deploy pipeline to a Rackspace Spot cluster via GitOps; wire up Cloudflare Pages for `web/`**
@@ -282,19 +284,19 @@ Not part of the initial build — noted so later scope decisions don't have to b
 The 10-minute pipeline cadence means every run is a snapshot, so a real time series accumulates for free — worth deriving once v1's live view is solid. Grouped by what each stat is for:
 
 **Per-config price/value history** (keyed by a config signature — CPU model + RAM + disk layout + datacenter — not by Hetzner's `listing_id`, since the same effective config reappears under a new listing ID every auction cycle):
-- All-time-low tracked *separately* for raw price and for `price_per_benchmark_point` — consistent with the plan's "no blended score" stance, these stay two independent facts, not one.
+- All-time-low tracked *separately* for raw price, `price_per_benchmark_point_single`, and `price_per_benchmark_point_multi` — consistent with the plan's "no blended score" stance (and v1's single/multi split, see ADR-3), these stay independent facts, never blended into one.
 - Price velocity: average price (and price-per-benchmark-point) drop per snapshot tick while a listing is live — signals whether a listing is still falling or near its floor.
 - Listing lifetime: how many ticks a listing survives before disappearing — a proxy for how fast that config sells, i.e. how much patience a given deal affords.
 
 **Market-level trends** (aggregate, not per-listing):
-- Rolling median/percentile of `price_per_benchmark_point`, overall and per CPU family, so a current listing can be flagged "N% below its trailing 7/30-day value baseline" — a benchmark-normalized version of Server Radar's raw-price index, which is exactly the combination the research found nobody has built.
+- Rolling median/percentile of `price_per_benchmark_point_multi` (and separately, `price_per_benchmark_point_single`), overall and per CPU family, so a current listing can be flagged "N% below its trailing 7/30-day value baseline" — a benchmark-normalized version of Server Radar's raw-price index, which is exactly the combination the research found nobody has built.
 - Listing volume over time by CPU family, datacenter, RAM tier, disk type.
 - AMD vs. Intel value trend (price-per-benchmark-point, not just raw price).
 - Benchmark coverage rate over time (% of listings with a matched score) — an internal health metric for `benchmark-map/`; coverage regressions should be visible over time, not just inferable from the current unmatched-CPU report.
 
 **Decision-support fields** derived from the above, for later UI surfacing:
 
-- **Value percentile (headline stat).** Hetzner repeatedly auctions batches of the same decommissioned server model, so exact config signatures (CPU + RAM + disk layout + datacenter) recur naturally over time — that's a real historical distribution to rank against, not an approximation. For each current listing, compute where its `price_per_benchmark_point` (and, separately, its raw price) falls in the distribution of every prior observation of that *same* config signature — e.g. "cheaper than 85% of every time this exact config has ever appeared." This turns "is this a good deal" into a direct percentile instead of a guess.
+- **Value percentile (headline stat).** Hetzner repeatedly auctions batches of the same decommissioned server model, so exact config signatures (CPU + RAM + disk layout + datacenter) recur naturally over time — that's a real historical distribution to rank against, not an approximation. For each current listing, compute where its `price_per_benchmark_point_multi` (and, separately, its raw price and `price_per_benchmark_point_single`) falls in the distribution of every prior observation of that *same* config signature — e.g. "cheaper than 85% of every time this exact config has ever appeared." This turns "is this a good deal" into a direct percentile instead of a guess.
 - **Cohort fallback.** A config needs enough accumulated duplicate observations for its own distribution to mean anything. Below some minimum sample count (exact threshold TBD once real data volume is known), fall back to ranking against the broader CPU-family cohort instead of the exact config — keeps newly-appeared or rare configs from showing a meaningless percentile off 1–2 data points.
 - An "at/near all-time-low" badge (separately for price and for price-per-benchmark-point), which is really the percentile stat's 0th-percentile special case.
 
@@ -312,7 +314,7 @@ Storing this without breaking the pipeline's stateless-per-run design (everythin
 
 - Performance-normalized alerting ("notify when €/PassMark drops below X") — depends on the historical-stats work above.
 - Multi-source benchmark cross-validation (Geekbench/YABS corpora) to verify and extend PassMark coverage.
-- Workload-weighted scoring (user-adjustable single-thread vs. multi-thread emphasis) instead of, or alongside, the separate per-resource metrics.
+- Optional user-adjustable single-/multi-thread blend as a convenience column — v1 already exposes `price_per_benchmark_point_single` and `price_per_benchmark_point_multi` as independent, separately sortable columns (see ADR-3 and Benchmark Strategy), so this candidate is only about an opt-in weighted combination for users who want one number, never a replacement for the two separate metrics.
 - Comparison/side-by-side view.
 - Browser extension overlaying benchmark scores directly on Hetzner's own auction page — unexplored by any tool found in research.
 
