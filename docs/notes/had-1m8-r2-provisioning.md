@@ -92,35 +92,138 @@ The R2 bucket **must** have CORS configured to allow DuckDB-WASM httpfs range re
 - Allow headers: Range, Content-Range, Content-Type
 - Expose headers: Content-Range, Accept-Ranges, Content-Length
 
-## Next Steps
+## Manual Provisioning Steps
 
-1. **Apply Terraform changes** to create the R2 bucket:
-   ```bash
-   cd /home/coding/declarative-config/terraform/cloudflare
-   terraform apply
-   ```
+### Step 1: Apply Terraform to Create R2 Bucket
 
-2. **Generate R2 API token** in Cloudflare dashboard:
-   - Go to Cloudflare Dashboard → R2 → hetzner-auction-data → R2 API Tokens
-   - Create bucket-scoped token with PUT, COPY, DELETE, GET permissions
-   - Note the token, account ID, and bucket name
+The R2 bucket resource is already defined in Terraform. Apply it:
 
-3. **Store in OpenBao** at `secret/rs-manager/hetzner-auction-dashboard/cloudflare/r2-api-token`:
-   ```bash
-   # Via OpenBao CLI or UI
-   vault kv put secret/rs-manager/hetzner-auction-dashboard/cloudflare/r2-api-token \
-     R2_API_TOKEN="<token>" \
-     R2_ACCOUNT_ID="<account-id>" \
-     R2_BUCKET_NAME="hetzner-auction-data"
-   ```
+```bash
+cd /home/coding/declarative-config/terraform/cloudflare
+# Ensure terraform.tfvars exists with cloudflare_api_token and cloudflare_account_id
+terraform init
+terraform apply
+```
 
-4. **Configure CORS** on the R2 bucket for DuckDB-WASM httpfs access
+Verify the bucket was created:
+```bash
+terraform output r2_hetzner_auction_data_endpoint
+# Should output: https://<account-id>.r2.cloudflarestorage.com/hetzner-auction-data
+```
 
-5. **Apply Kubernetes manifests** via ArgoCD (auto-sync) or manually:
-   ```bash
-   kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig \
-     apply -f /home/coding/declarative-config/k8s/iad-ci/hetzner-auction-dashboard/
-   ```
+### Step 2: Create R2 API Token in Cloudflare Dashboard
+
+1. Navigate to: https://dash.cloudflare.com/profile/api-tokens
+2. Click **"Create Token"** → **"Create Custom Token"**
+3. Configure permissions:
+   - **Permissions → Account → Cloudflare R2:** ✅ **Edit**
+   - **Account Resources:**
+     - ✅ **Include** → **Specific account** → *[Your Account ID]*
+     - ✅ **Account Resources** → **All R2 buckets** (or specify `hetzner-auction-data`)
+4. Set **TTL** to **Forever** (or appropriate duration)
+5. Click **"Continue to summary"** → **"Create Token"**
+6. **Copy the token immediately** - it won't be shown again!
+
+**Note:** Your Cloudflare Account ID is visible in the dashboard URL or right sidebar.
+
+### Step 3: Store Credentials in OpenBao
+
+Access OpenBao on rs-manager cluster and store the secret:
+
+```bash
+# Port-forward to OpenBao
+kubectl --kubeconfig=/home/coding/.kube/rs-manager.kubeconfig \
+  port-forward -n openbao svc/openbao 8200:8200
+
+# In another terminal, login to OpenBao and write the secret
+export BAO_ADDR="http://localhost:8200"
+bao kv put secret/rs-manager/hetzner-auction-dashboard/cloudflare/r2-api-token \
+  R2_API_TOKEN="your-token-here" \
+  R2_ACCOUNT_ID="your-account-id" \
+  R2_BUCKET_NAME="hetzner-auction-data"
+```
+
+Verify the secret was written:
+```bash
+bao kv get secret/rs-manager/hetzner-auction-dashboard/cloudflare/r2-api-token
+```
+
+### Step 4: Configure CORS on R2 Bucket
+
+**Required for DuckDB-WASM httpfs access.** Configure CORS via Cloudflare API or dashboard:
+
+**Option 1 - Cloudflare API:**
+```bash
+# Get your account ID and API token from Cloudflare Dashboard
+curl -X PUT "https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/hetzner-auction-data/cors" \
+  -H "Authorization: Bearer {api_token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "AllowedOrigins": ["https://*.pages.dev", "https://your-custom-domain.com"],
+    "AllowedMethods": ["GET", "HEAD", "OPTIONS"],
+    "AllowedHeaders": ["Range", "Content-Range", "Content-Type"],
+    "ExposeHeaders": ["Content-Range", "Accept-Ranges", "Content-Length"],
+    "MaxAgeSeconds": 3600
+  }'
+```
+
+**Option 2 - Cloudflare Dashboard:**
+1. Navigate to: https://dash.cloudflare.com/{account_id}/r2/buckets
+2. Click on **hetzner-auction-data**
+3. Go to **Settings** → **CORS**
+4. Add CORS rule with the above settings
+
+### Step 5: Verify ExternalSecret Reconciliation
+
+The ExternalSecret will automatically reconcile once OpenBao has the secret:
+
+```bash
+# Check ExternalSecret status
+kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig \
+  get externalsecret hetzner-auction-r2-externalsecret \
+  -n hetzner-auction-dashboard
+
+# Should show: Status: SecretSynced, Ready: true
+
+# Check the resulting Kubernetes secret
+kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig \
+  get secret hetzner-auction-r2-secret \
+  -n hetzner-auction-dashboard
+
+# Verify secret keys exist (without outputting values)
+kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig \
+  get secret hetzner-auction-r2-secret \
+  -n hetzner-auction-dashboard \
+  -o jsonpath='{.data}' | jq 'keys'
+```
+
+Expected output: `["R2_ACCOUNT_ID", "R2_API_TOKEN", "R2_BUCKET_NAME"]`
+
+## Completion Checklist
+
+- [ ] Terraform applied → R2 bucket `hetzner-auction-data` exists
+- [ ] R2 API token created in Cloudflare Dashboard
+- [ ] Credentials stored in OpenBao at `rs-manager/hetzner-auction-dashboard/cloudflare/r2-api-token`
+- [ ] CORS configured on R2 bucket for DuckDB-WASM access
+- [ ] ExternalSecret reconciled successfully → Kubernetes secret exists
+- [ ] ArgoCD Application `hetzner-auction-dashboard` is healthy
+
+## Troubleshooting
+
+**ExternalSecret not reconciling?**
+- Check OpenBao secret path is correct: `rs-manager/hetzner-auction-dashboard/cloudflare/r2-api-token`
+- Verify OpenBao is accessible from the cluster
+- Check ExternalSecret events: `kubectl get externalsecret -n hetzner-auction-dashboard -o yaml`
+
+**CORS errors in browser console?**
+- Verify CORS is configured on the correct bucket
+- Check allowed origins match your Cloudflare Pages domain
+- Ensure exposed headers include `Content-Range`, `Accept-Ranges`, `Content-Length`
+
+**R2 API token permissions issues?**
+- Verify token has R2 Edit permissions
+- Check token is scoped to correct account
+- Ensure bucket exists and token has access to it
 
 ## Files Created/Modified
 
