@@ -1,0 +1,73 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: hetzner-auction-dashboard-web-push
+  namespace: argo
+  annotations:
+    descriptions: "Triggers hetzner-auction-dashboard web/ deployment on git push events"
+spec:
+  template:
+    serviceAccountName: argo-events-sa
+  dependencies:
+    # Listen for push events from Forgejo/GitHub
+    - name: git-push-event
+      eventSourceName: forgejo-webhook
+      eventName: git-push
+
+  triggers:
+    # Submit workflow on push to main branch
+    - template:
+        name: hetzner-auction-dashboard-web-deploy-workflow
+        arguments:
+          - name: repo_url
+            value: "https://git.ardenone.com/jedarden/hetzner-auction-dashboard.git"
+          - name: branch
+            value: "{{dependency.git-push-event.payload.ref}}"
+          - name: commit_sha
+            value: "{{dependency.git-push-event.payload.after}}"
+          - name: cloudflare_project_name
+            value: "hetzner-auction-dashboard"
+          - name: cloudflare_account_id
+            value: "{{dependency.git-push-event.payload.cloudflare_account_id}}"
+        k8s:
+          operation: create
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: hetzner-auction-dashboard-web-deploy-
+                namespace: argo
+              spec:
+                entrypoint: hetzner-auction-dashboard-web-deploy
+                workflowTemplateRef:
+                  name: hetzner-auction-dashboard-web-deploy
+                  clusterScope: false
+                arguments:
+                  parameters:
+                    - name: repo_url
+                      value: "{{workflow.parameters.repo_url}}"
+                    - name: branch
+                      value: "{{workflow.parameters.branch}}"
+                    - name: commit_sha
+                      value: "{{workflow.parameters.commit_sha}}"
+                    - name: cloudflare_project_name
+                      value: "{{workflow.parameters.cloudflare_project_name}}"
+                    - name: cloudflare_account_id
+                      value: "{{workflow.parameters.cloudflare_account_id}}"
+
+  # Optional: Add filtering logic
+  logic:
+    # Only trigger for main branch
+    - name: main-branch-only
+      when: "{{dependency.git-push-event.payload.ref}} == 'refs/heads/main'"
+
+# Note: This Sensor should be synced to the cluster via ArgoCD
+# from jedarden/declarative-config repository under k8s/iad-ci/argo-events/
+#
+# Manual submission fallback:
+# Users can manually submit the workflow via Argo UI or CLI:
+# argo workflow submit -s workflow-template-ref \
+#   -p branch=main \
+#   -p commit_sha=<specific-sha> \
+#   hetzner-auction-dashboard-web-deploy

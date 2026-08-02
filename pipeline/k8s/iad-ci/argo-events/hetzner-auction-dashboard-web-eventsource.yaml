@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: forgejo-webhook
+  namespace: argo
+  annotations:
+    descriptions: "Receives webhook events from Forgejo/Git for deployment triggers"
+spec:
+  service:
+    ports:
+      - port: 12000
+        targetPort: 12000
+  webhook:
+    # Webhook endpoint for git push events
+    - name: git-push
+      port: 12000
+      endpoint: /git-push/hetzner-auction-dashboard
+      method: POST
+      webhookEvent:
+        # Example Forgejo push webhook payload structure
+        # Adjust based on actual Forgejo webhook format
+        ref: ""
+        after: ""
+        before: ""
+        repository:
+          name: ""
+          full_name: ""
+        pusher:
+          name: ""
+          email: ""
+        sender:
+          login: ""
+      # Optional: webhook authentication
+      # auth:
+      #   secret: webhook-secret
+      #   key:
+      #     name: forgejo-webhook-secret
+      #     key: token
+      filter:
+        # Only process events for hetzner-auction-dashboard repository
+        expr: |
+          (event.repository.full_name == 'jedarden/hetzner-auction-dashboard' &&
+           event.ref == 'refs/heads/main' &&
+           event.after != event.before)
+
+  # Note: This EventSource should be synced to the cluster via ArgoCD
+  # from jedarden/declarative-config repository under k8s/iad-ci/argo-events/
+  #
+  # Webhook URL configuration:
+  # Configure webhook in Forgejo/Git repository settings:
+  # URL: https://<argo-events-hostname>:12000/git-push/hetzner-auction-dashboard
+  # Content type: application/json
+  # Events: Push events
+  # Secret: (configure matching secret in EventSource if auth is enabled)
