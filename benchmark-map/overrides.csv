@@ -1,0 +1,9 @@
+raw_cpu,passmark_id,notes
+# Manual overrides for CPU strings that can't be matched through normal alias patterns
+# This is for unusual spellings, missing generation info, or other edge cases
+# Format: raw_cpu,passmark_id,notes
+
+# Example entries (commented out - these would be populated as needed):
+# "Xeon E5-2680 (Haswell)",5773,"Missing v4 designation, Haswell indicates v4"
+# "EPYC 7401 24-Core",5055,"Omitted 'P' suffix variant"
+# "i7-12700 non-K",5190,"K-series variant designation issue"
