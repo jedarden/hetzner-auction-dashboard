@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hetzner Auction Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f8f9fa;
+            color: #212529;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #6c757d;
+            font-size: 1rem;
+        }
+
+        /* Starter Configs Section */
+        .starter-configs {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .starter-configs h2 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            color: #1a1a1a;
+        }
+
+        .starter-configs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .config-preset {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .config-preset:hover {
+            border-color: #4c6ef5;
+            background: #f1f3ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(76, 110, 245, 0.2);
+        }
+
+        .config-preset.active {
+            border-color: #4c6ef5;
+            background: #e7f2ff;
+        }
+
+        .config-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .config-name {
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 5px;
+            font-size: 0.95rem;
+        }
+
+        .config-description {
+            font-size: 0.85rem;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+
+        /* Filters Section */
+        .filters {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .filters h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #343a40;
+            font-size: 0.9rem;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #4c6ef5;
+            box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.1);
+        }
+
+        .filter-group .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .filter-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
+        /* Reset Filters Button */
+        .reset-filters {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: background 0.2s;
+            margin-top: 20px;
+        }
+
+        .reset-filters:hover {
+            background: #5a6268;
+        }
+
+        /* Results Section */
+        .results {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .results h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+
+        .results-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .listing {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #fff;
+            transition: box-shadow 0.2s;
+        }
+
+        .listing:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .listing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .listing-title {
+            flex: 1;
+        }
+
+        .listing-title h3 {
+            font-size: 1.2rem;
+            color: #1a1a1a;
+            margin-bottom: 5px;
+        }
+
+        .listing-specs {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .listing-price {
+            text-align: right;
+        }
+
+        .price {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #228be6;
+        }
+
+        .price-period {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+
+        .listing-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .metric-value.good {
+            color: #2f9e44;
+        }
+
+        .metric-value.unscored {
+            color: #868e96;
+            font-style: italic;
+        }
+
+        .unscored-badge {
+            display: inline-block;
+            background: #f1f3ff;
+            color: #5c7cfa;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .staleness-indicator {
+            background: #fff3bf;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            border-left: 4px solid #ffc107;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .filter-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .listing-header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .listing-price {
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Hetzner Auction Dashboard</h1>
+            <p class="subtitle">Find the best value in Hetzner's server auction with benchmark-based pricing</p>
+        </header>
+
+        <!-- Starter Configs -->
+        <div class="starter-configs">
+            <h2>🚀 Quick Start - Choose a preset</h2>
+            <div class="starter-configs-grid" id="starter-configs-grid">
+                <!-- Configs will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <h2>🔍 Filters</h2>
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label for="cpu-family">CPU Family</label>
+                    <select id="cpu-family">
+                        <option value="">Any</option>
+                        <option value="ryzen">AMD Ryzen</option>
+                        <option value="xeon">Intel Xeon</option>
+                        <option value="core">Intel Core</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="min-ram">Minimum RAM (GB)</label>
+                    <input type="number" id="min-ram" value="0" min="0" step="1">
+                </div>
+
+                <div class="filter-group">
+                    <label for="max-price">Maximum Price (€/month)</label>
+                    <input type="number" id="max-price" value="" min="0" step="0.01" placeholder="No limit">
+                </div>
+
+                <div class="filter-group">
+                    <label for="disk-type">Disk Type</label>
+                    <select id="disk-type">
+                        <option value="">Any</option>
+                        <option value="nvme">NVMe SSD</option>
+                        <option value="ssd">SATA SSD</option>
+                        <option value="hdd">HDD</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="min-disk">Minimum Disk Size (TB)</label>
+                    <input type="number" id="min-disk" value="0" min="0" step="0.5">
+                </div>
+
+                <div class="filter-group">
+                    <label for="location">Datacenter Location</label>
+                    <select id="location">
+                        <option value="">Any</option>
+                        <option value="fsn">Falkenstein</option>
+                        <option value="nbg">Nuremberg</option>
+                        <option value="hel">Helsinki</option>
+                        <option value="ash">Ashburn, VA</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="benchmark-matched-only">
+                        <label for="benchmark-matched-only">Benchmark matched only</label>
+                    </div>
+                </div>
+            </div>
+
+            <button class="reset-filters" id="reset-filters">Reset Filters</button>
+        </div>
+
+        <!-- Results -->
+        <div class="results">
+            <h2>📊 Results</h2>
+            <div class="staleness-indicator" id="staleness-indicator">
+                Last updated: <span id="last-updated">Loading...</span>
+            </div>
+            <div class="results-info">
+                Showing <span id="results-count">0</span> listings • Sorted by: <span id="current-sort">Value (multi-thread)</span>
+            </div>
+            <div id="listings-container">
+                <!-- Listings will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Starter configs data (in production, this would be loaded from starter-configs.json)
+        const starterConfigs = {
+            "presets": [
+                {
+                    "id": "budget-web-server",
+                    "name": "Budget Web Server",
+                    "description": "Affordable option for hosting web applications and light workloads",
+                    "icon": "🌐",
+                    "filters": {
+                        "price_effective_monthly_max": 30,
+                        "ram_gb_min": 16,
+                        "cpu_family_preference": "any",
+                        "disk_type": "any",
+                        "benchmark_matched_only": true
+                    },
+                    "sort": "price_per_benchmark_point_multi",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "home-nas",
+                    "name": "Home NAS",
+                    "description": "High storage capacity for file server, backup, or media storage",
+                    "icon": "💾",
+                    "filters": {
+                        "price_effective_monthly_max": 50,
+                        "ram_gb_min": 8,
+                        "disk_type": "hdd",
+                        "disk_size_tb_min": 4,
+                        "cpu_family_preference": "any",
+                        "benchmark_matched_only": false
+                    },
+                    "sort": "price_per_tb_disk",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "game-server",
+                    "name": "Game Server",
+                    "description": "High single-thread performance for game hosting and latency-sensitive workloads",
+                    "icon": "🎮",
+                    "filters": {
+                        "price_effective_monthly_max": 60,
+                        "ram_gb_min": 32,
+                        "cpu_family_preference": "ryzen",
+                        "disk_type": "nvme",
+                        "benchmark_matched_only": true
+                    },
+                    "sort": "price_per_benchmark_point_single",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "compute-intensive",
+                    "name": "Compute Intensive",
+                    "description": "Maximum multi-thread performance for rendering, scientific computing, or batch processing",
+                    "icon": "⚡",
+                    "filters": {
+                        "price_effective_monthly_max": 80,
+                        "ram_gb_min": 64,
+                        "cpu_family_preference": "any",
+                        "disk_type": "any",
+                        "benchmark_matched_only": true
+                    },
+                    "sort": "price_per_benchmark_point_multi",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "storage-focused",
+                    "name": "Storage Focused",
+                    "description": "Best value per terabyte for bulk storage, backups, or archives",
+                    "icon": "📦",
+                    "filters": {
+                        "price_effective_monthly_max": 40,
+                        "ram_gb_min": 16,
+                        "disk_type": "hdd",
+                        "disk_size_tb_min": 2,
+                        "cpu_family_preference": "any",
+                        "benchmark_matched_only": false
+                    },
+                    "sort": "price_per_tb_disk",
+                    "sort_direction": "asc"
+                }
+            ]
+        };
+
+        // Mock listings data (in production, this would come from DuckDB-WASM + Parquet)
+        const mockListings = [
+            {
+                id: 1,
+                cpu_model: "Ryzen 9 5950X",
+                ram_gb: 128,
+                disks: [{ type: "nvme", size_tb: 2 }],
+                price_effective_monthly: 45.99,
+                benchmark_multi: 51234,
+                benchmark_single: 4287,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00090,
+                price_per_benchmark_point_single: 0.01073,
+                price_per_gb_ram: 0.36,
+                price_per_tb_disk: 22.99,
+                location: "fsn"
+            },
+            {
+                id: 2,
+                cpu_model: "Xeon E5-2680 v4",
+                ram_gb: 64,
+                disks: [{ type: "hdd", size_tb: 4 }],
+                price_effective_monthly: 28.50,
+                benchmark_multi: 18907,
+                benchmark_single: 2134,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00151,
+                price_per_benchmark_point_single: 0.01335,
+                price_per_gb_ram: 0.45,
+                price_per_tb_disk: 7.13,
+                location: "nbg"
+            },
+            {
+                id: 3,
+                cpu_model: "Core i7-12700",
+                ram_gb: 32,
+                disks: [{ type: "nvme", size_tb: 1 }],
+                price_effective_monthly: 22.75,
+                benchmark_multi: 24843,
+                benchmark_single: 3891,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00092,
+                price_per_benchmark_point_single: 0.00585,
+                price_per_gb_ram: 0.71,
+                price_per_tb_disk: 22.75,
+                location: "hel"
+            },
+            {
+                id: 4,
+                cpu_model: "Ryzen 7 5800X",
+                ram_gb: 64,
+                disks: [{ type: "nvme", size_tb: 1 }],
+                price_effective_monthly: 38.25,
+                benchmark_multi: 28756,
+                benchmark_single: 3782,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00133,
+                price_per_benchmark_point_single: 0.01012,
+                price_per_gb_ram: 0.60,
+                price_per_tb_disk: 38.25,
+                location: "fsn"
+            },
+            {
+                id: 5,
+                cpu_model: "Unknown CPU Model X",
+                ram_gb: 32,
+                disks: [{ type: "ssd", size_tb: 1 }],
+                price_effective_monthly: 18.00,
+                benchmark_multi: null,
+                benchmark_single: null,
+                benchmark_matched: false,
+                price_per_benchmark_point_multi: null,
+                price_per_benchmark_point_single: null,
+                price_per_gb_ram: 0.56,
+                price_per_tb_disk: 18.00,
+                location: "nbg"
+            }
+        ];
+
+        let currentPreset = null;
+
+        // Initialize starter configs UI
+        function initStarterConfigs() {
+            const container = document.getElementById('starter-configs-grid');
+
+            starterConfigs.presets.forEach(preset => {
+                const presetElement = document.createElement('div');
+                presetElement.className = 'config-preset';
+                presetElement.dataset.presetId = preset.id;
+                presetElement.innerHTML = `
+                    <div class="config-icon">${preset.icon}</div>
+                    <div class="config-name">${preset.name}</div>
+                    <div class="config-description">${preset.description}</div>
+                `;
+
+                presetElement.addEventListener('click', () => applyPreset(preset));
+                container.appendChild(presetElement);
+            });
+        }
+
+        // Apply a preset configuration
+        function applyPreset(preset) {
+            currentPreset = preset;
+
+            // Update active state
+            document.querySelectorAll('.config-preset').forEach(el => {
+                el.classList.toggle('active', el.dataset.presetId === preset.id);
+            });
+
+            // Apply filters
+            const filters = preset.filters;
+
+            // CPU family
+            const cpuFamilySelect = document.getElementById('cpu-family');
+            if (filters.cpu_family_preference && filters.cpu_family_preference !== 'any') {
+                cpuFamilySelect.value = filters.cpu_family_preference;
+            } else {
+                cpuFamilySelect.value = '';
+            }
+
+            // RAM
+            document.getElementById('min-ram').value = filters.ram_gb_min || 0;
+
+            // Price
+            if (filters.price_effective_monthly_max) {
+                document.getElementById('max-price').value = filters.price_effective_monthly_max;
+            } else {
+                document.getElementById('max-price').value = '';
+            }
+
+            // Disk type
+            const diskTypeSelect = document.getElementById('disk-type');
+            if (filters.disk_type && filters.disk_type !== 'any') {
+                diskTypeSelect.value = filters.disk_type;
+            } else {
+                diskTypeSelect.value = '';
+            }
+
+            // Disk size
+            document.getElementById('min-disk').value = filters.disk_size_tb_min || 0;
+
+            // Benchmark matched only
+            document.getElementById('benchmark-matched-only').checked = filters.benchmark_matched_only || false;
+
+            // Apply filtering and sorting
+            filterAndSortListings(preset.sort, preset.sort_direction);
+        }
+
+        // Reset filters to default state
+        function resetFilters() {
+            currentPreset = null;
+
+            // Remove active state from all presets
+            document.querySelectorAll('.config-preset').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Reset all filter inputs
+            document.getElementById('cpu-family').value = '';
+            document.getElementById('min-ram').value = 0;
+            document.getElementById('max-price').value = '';
+            document.getElementById('disk-type').value = '';
+            document.getElementById('min-disk').value = 0;
+            document.getElementById('location').value = '';
+            document.getElementById('benchmark-matched-only').checked = false;
+
+            // Reset to default sort
+            filterAndSortListings('price_per_benchmark_point_multi', 'asc');
+        }
+
+        // Filter and sort listings based on current filters
+        function filterAndSortListings(sortBy = 'price_per_benchmark_point_multi', sortDirection = 'asc') {
+            const filters = {
+                cpu_family: document.getElementById('cpu-family').value,
+                min_ram: parseInt(document.getElementById('min-ram').value) || 0,
+                max_price: parseFloat(document.getElementById('max-price').value) || null,
+                disk_type: document.getElementById('disk-type').value,
+                min_disk: parseFloat(document.getElementById('min-disk').value) || 0,
+                location: document.getElementById('location').value,
+                benchmark_matched_only: document.getElementById('benchmark-matched-only').checked
+            };
+
+            // Filter listings
+            let filtered = mockListings.filter(listing => {
+                // CPU family filter
+                if (filters.cpu_family) {
+                    const cpuLower = listing.cpu_model.toLowerCase();
+                    if (filters.cpu_family === 'ryzen' && !cpuLower.includes('ryzen')) return false;
+                    if (filters.cpu_family === 'xeon' && !cpuLower.includes('xeon')) return false;
+                    if (filters.cpu_family === 'core' && !cpuLower.includes('core')) return false;
+                }
+
+                // RAM filter
+                if (listing.ram_gb < filters.min_ram) return false;
+
+                // Price filter
+                if (filters.max_price && listing.price_effective_monthly > filters.max_price) return false;
+
+                // Disk type filter
+                if (filters.disk_type) {
+                    const hasDiskType = listing.disks.some(disk => disk.type === filters.disk_type);
+                    if (!hasDiskType) return false;
+                }
+
+                // Disk size filter
+                const totalDiskSize = listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
+                if (totalDiskSize < filters.min_disk) return false;
+
+                // Location filter
+                if (filters.location && listing.location !== filters.location) return false;
+
+                // Benchmark matched filter
+                if (filters.benchmark_matched_only && !listing.benchmark_matched) return false;
+
+                return true;
+            });
+
+            // Sort listings
+            filtered.sort((a, b) => {
+                let comparison = 0;
+
+                switch (sortBy) {
+                    case 'price_per_benchmark_point_multi':
+                        if (a.price_per_benchmark_point_multi === null) comparison = -1;
+                        else if (b.price_per_benchmark_point_multi === null) comparison = 1;
+                        else comparison = a.price_per_benchmark_point_multi - b.price_per_benchmark_point_multi;
+                        break;
+                    case 'price_per_benchmark_point_single':
+                        if (a.price_per_benchmark_point_single === null) comparison = -1;
+                        else if (b.price_per_benchmark_point_single === null) comparison = 1;
+                        else comparison = a.price_per_benchmark_point_single - b.price_per_benchmark_point_single;
+                        break;
+                    case 'price_per_gb_ram':
+                        comparison = a.price_per_gb_ram - b.price_per_gb_ram;
+                        break;
+                    case 'price_per_tb_disk':
+                        comparison = a.price_per_tb_disk - b.price_per_tb_disk;
+                        break;
+                    default:
+                        comparison = a.price_effective_monthly - b.price_effective_monthly;
+                }
+
+                return sortDirection === 'asc' ? comparison : -comparison;
+            });
+
+            // Update UI
+            displayListings(filtered);
+            updateSortLabel(sortBy);
+        }
+
+        // Display listings in the UI
+        function displayListings(listings) {
+            const container = document.getElementById('listings-container');
+            const countEl = document.getElementById('results-count');
+
+            countEl.textContent = listings.length;
+            container.innerHTML = '';
+
+            if (listings.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No listings match your filters. Try adjusting your criteria.</div>';
+                return;
+            }
+
+            listings.forEach(listing => {
+                const totalDiskSize = listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
+                const diskTypes = listing.disks.map(d => {
+                    const typeLabels = { nvme: 'NVMe', ssd: 'SATA SSD', hdd: 'HDD' };
+                    return typeLabels[d.type] || d.type.toUpperCase();
+                }).join(', ');
+
+                const listingElement = document.createElement('div');
+                listingElement.className = 'listing';
+
+                const unscoredBadge = listing.benchmark_matched ? '' : '<span class="unscored-badge">Unscored</span>';
+                const benchmarkMultiClass = listing.price_per_benchmark_point_multi !== null ? 'good' : 'unscored';
+                const benchmarkSingleClass = listing.price_per_benchmark_point_single !== null ? 'good' : 'unscored';
+
+                listingElement.innerHTML = `
+                    <div class="listing-header">
+                        <div class="listing-title">
+                            <h3>${listing.cpu_model} ${unscoredBadge}</h3>
+                            <div class="listing-specs">
+                                ${listing.ram_gb}GB RAM • ${totalDiskSize}TB ${diskTypes} • ${getLocationLabel(listing.location)}
+                            </div>
+                        </div>
+                        <div class="listing-price">
+                            <div class="price">€${listing.price_effective_monthly.toFixed(2)}</div>
+                            <div class="price-period">per month</div>
+                        </div>
+                    </div>
+                    <div class="listing-metrics">
+                        <div class="metric">
+                            <div class="metric-label">€/Benchmark (Multi)</div>
+                            <div class="metric-value ${benchmarkMultiClass}">
+                                ${listing.price_per_benchmark_point_multi !== null
+                                    ? listing.price_per_benchmark_point_multi.toFixed(5)
+                                    : 'N/A'}
+                            </div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">€/Benchmark (Single)</div>
+                            <div class="metric-value ${benchmarkSingleClass}">
+                                ${listing.price_per_benchmark_point_single !== null
+                                    ? listing.price_per_benchmark_point_single.toFixed(5)
+                                    : 'N/A'}
+                            </div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">€/GB RAM</div>
+                            <div class="metric-value">€${listing.price_per_gb_ram.toFixed(2)}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">€/TB Disk</div>
+                            <div class="metric-value">€${listing.price_per_tb_disk.toFixed(2)}</div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(listingElement);
+            });
+        }
+
+        // Get location label
+        function getLocationLabel(location) {
+            const labels = {
+                fsn: 'Falkenstein',
+                nbg: 'Nuremberg',
+                hel: 'Helsinki',
+                ash: 'Ashburn, VA'
+            };
+            return labels[location] || location.toUpperCase();
+        }
+
+        // Update sort label
+        function updateSortLabel(sortBy) {
+            const labels = {
+                price_per_benchmark_point_multi: 'Value (multi-thread)',
+                price_per_benchmark_point_single: 'Value (single-thread)',
+                price_per_gb_ram: 'Value per GB RAM',
+                price_per_tb_disk: 'Value per TB disk'
+            };
+            document.getElementById('current-sort').textContent = labels[sortBy] || sortBy;
+        }
+
+        // Update staleness indicator
+        function updateStaleness() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('last-updated').textContent = timeString;
+        }
+
+        // Event listeners for manual filter changes
+        const filterInputs = [
+            'cpu-family', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'benchmark-matched-only'
+        ];
+
+        filterInputs.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', () => {
+                    // Clear preset selection when filters are manually changed
+                    if (currentPreset) {
+                        currentPreset = null;
+                        document.querySelectorAll('.config-preset').forEach(el => {
+                            el.classList.remove('active');
+                        });
+                    }
+                    filterAndSortListings();
+                });
+            }
+        });
+
+        // Reset button
+        document.getElementById('reset-filters').addEventListener('click', resetFilters);
+
+        // Initialize
+        initStarterConfigs();
+        filterAndSortListings();
+        updateStaleness();
+
+        // In production, update staleness every minute
+        setInterval(updateStaleness, 60000);
+    </script>
+</body>
+</html>
