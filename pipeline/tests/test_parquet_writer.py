@@ -29,7 +29,7 @@ class TestParquetWriterBasics:
 
     def test_write_single_listing(self):
         """Writing a single listing should produce valid Parquet."""
-        listing = self._make_sample_listing()
+        listing = _make_sample_listing()
         writer = ParquetWriter()
 
         with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
@@ -43,7 +43,7 @@ class TestParquetWriterBasics:
     def test_write_multiple_listings(self):
         """Writing multiple listings should preserve all rows."""
         listings = [
-            self._make_sample_listing(listing_id=f"listing-{i}")
+            _make_sample_listing(listing_id=f"listing-{i}")
             for i in range(10)
         ]
         writer = ParquetWriter()
@@ -56,7 +56,7 @@ class TestParquetWriterBasics:
 
     def test_convenience_function(self):
         """The convenience function should work like the class."""
-        listings = [self._make_sample_listing()]
+        listings = [_make_sample_listing()]
 
         with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
             write_listings_to_parquet(listings, tmp.name)
@@ -70,7 +70,7 @@ class TestParquetSchema:
 
     def test_schema_has_all_required_columns(self):
         """All required columns should be present in the schema."""
-        listing = self._make_sample_listing()
+        listing = _make_sample_listing()
         writer = ParquetWriter()
 
         with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
@@ -108,7 +108,7 @@ class TestParquetSchema:
 
     def test_column_types_are_correct(self):
         """Column types should match the Data Models specification."""
-        listing = self._make_sample_listing()
+        listing = _make_sample_listing()
         writer = ParquetWriter()
 
         with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
@@ -128,7 +128,7 @@ class TestNullHandling:
 
     def test_unmatched_cpu_has_null_scores(self):
         """Unmatched CPUs should have NULL benchmark scores."""
-        listing = self._make_sample_listing(
+        listing = _make_sample_listing(
             benchmark_matched=False,
             passmark_id=None,
             single_thread_score=None,
@@ -152,7 +152,7 @@ class TestNullHandling:
 
     def test_zero_division_metrics_are_null(self):
         """Metrics that would divide by zero should be NULL."""
-        listing = self._make_sample_listing(
+        listing = _make_sample_listing(
             ram_gb=0,  # Will cause price_per_gb_ram to be NULL
         )
 
@@ -167,7 +167,7 @@ class TestNullHandling:
 
     def test_available_from_can_be_null(self):
         """available_from field can be None (immediately available)."""
-        listing = self._make_sample_listing(available_from=None)
+        listing = _make_sample_listing(available_from=None)
 
         writer = ParquetWriter()
 
@@ -183,7 +183,7 @@ class TestDisksField:
 
     def test_single_disk(self):
         """A single disk should be stored as a list with one struct."""
-        listing = self._make_sample_listing(
+        listing = _make_sample_listing(
             disks=[DiskSpec(type="NVMe", count=2, capacity_gb=480)]
         )
 
@@ -199,7 +199,7 @@ class TestDisksField:
 
     def test_multiple_disks(self):
         """Multiple disks should be stored as a list with multiple structs."""
-        listing = self._make_sample_listing(
+        listing = _make_sample_listing(
             disks=[
                 DiskSpec(type="NVMe", count=2, capacity_gb=480),
                 DiskSpec(type="HDD", count=4, capacity_gb=2048),
@@ -219,7 +219,7 @@ class TestDisksField:
 
     def test_empty_disks_list(self):
         """An empty disks list should be stored correctly."""
-        listing = self._make_sample_listing(disks=[])
+        listing = _make_sample_listing(disks=[])
 
         writer = ParquetWriter()
 
@@ -236,7 +236,7 @@ class TestDataIntegrity:
 
     def test_all_fields_preserved(self):
         """All listing fields should be preserved in round-trip."""
-        original = self._make_sample_listing(
+        original = _make_sample_listing(
             listing_id="test-listing-123",
             datacenter="FSN1-DC3",
             location="FSN",
@@ -271,7 +271,7 @@ class TestDataIntegrity:
 
     def test_derived_metrics_computed_correctly(self):
         """Derived cost metrics should be computed correctly."""
-        listing = self._make_sample_listing(
+        listing = _make_sample_listing(
             price_base=2999,  # €29.99
             price_setup_fee=4999,  # €49.99
             benchmark_matched=True,
@@ -308,7 +308,7 @@ class TestCompressionOptions:
 
     def test_snappy_compression(self):
         """Snappy compression should work."""
-        listing = self._make_sample_listing()
+        listing = _make_sample_listing()
         writer = ParquetWriter(compression="snappy")
 
         with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
@@ -321,7 +321,7 @@ class TestCompressionOptions:
 
     def test_gzip_compression(self):
         """GZIP compression should work."""
-        listing = self._make_sample_listing()
+        listing = _make_sample_listing()
         writer = ParquetWriter(compression="gzip")
 
         with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
@@ -338,7 +338,7 @@ class TestErrorHandling:
 
     def test_write_failure_raises_ioerror(self):
         """Write failures should raise IOError."""
-        listing = self._make_sample_listing()
+        listing = _make_sample_listing()
         writer = ParquetWriter()
 
         # Try to write to an invalid path
@@ -393,6 +393,7 @@ def _make_sample_listing(
     )
 
     cpu_match = BenchmarkMatch(
+        cpu_raw=cpu_raw,
         matched=benchmark_matched,
         cpu_normalized=cpu_normalized,
         passmark_id=passmark_id,
