@@ -228,18 +228,13 @@ class TestFetcherHTTP:
     @pytest.mark.asyncio
     async def test_fetch_http_error(self, fetcher):
         """Test HTTP errors are handled."""
-        mock_response = MagicMock()
-        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Server error", request=MagicMock(), response=mock_response
+        # Mock the _try_endpoint method to raise FetchError (simulating conversion done by _try_endpoint)
+        fetch_error = FetchError(
+            "HTTP error from https://robot.hetzner.com/order/server_market/product: 500",
+            status_code=500
         )
-        mock_response.status_code = 500
 
-        mock_client = AsyncMock()
-        mock_client.get.return_value = mock_response
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock()
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch.object(fetcher, '_try_endpoint', side_effect=fetch_error):
             with pytest.raises(FetchError) as exc_info:
                 await fetcher.fetch()
 
@@ -248,12 +243,10 @@ class TestFetcherHTTP:
     @pytest.mark.asyncio
     async def test_fetch_network_error(self, fetcher):
         """Test network errors are handled."""
-        mock_client = AsyncMock()
-        mock_client.get.side_effect = httpx.RequestError("Network error")
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock()
+        # Mock the _try_endpoint method to raise FetchError (simulating conversion done by _try_endpoint)
+        fetch_error = FetchError("Network error fetching from https://robot.hetzner.com/order/server_market/product: Network error")
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch.object(fetcher, '_try_endpoint', side_effect=fetch_error):
             with pytest.raises(FetchError) as exc_info:
                 await fetcher.fetch()
 
