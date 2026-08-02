@@ -297,7 +297,8 @@ class HetznerAuctionFetcher:
         """Convert price value to integer EUR cents."""
         if isinstance(price_value, (int, float)):
             # Assume already in EUR if numeric, convert to cents
-            return int(price_value * 100)
+            # Use round to avoid floating point precision issues
+            return round(price_value * 100)
 
         if isinstance(price_value, str):
             # Parse string like "€19.99" or "19.99" or "1999" (cents)
@@ -306,7 +307,7 @@ class HetznerAuctionFetcher:
             if "." in cleaned:
                 # Decimal EUR value
                 eur = float(cleaned)
-                return int(eur * 100)
+                return round(eur * 100)
             else:
                 # Assume already in cents
                 return int(cleaned)
