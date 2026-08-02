@@ -42,6 +42,7 @@ def generate_sample_listings() -> list[EnrichedListing]:
         fetched_at=datetime.now(UTC),
     )
     cpu1 = BenchmarkMatch(
+        cpu_raw="Intel Xeon E5-2680 v4",
         matched=True,
         cpu_normalized="Intel Xeon E5-2680 v4",
         passmark_id=2680,
@@ -141,7 +142,8 @@ def generate_conformance_test_html(parquet_path: str, output_path: str) -> None:
         parquet_path: Path to the generated Parquet file (relative to HTML)
         output_path: Path where the HTML test file will be written
     """
-    html_content = f"""<!DOCTYPE html>
+    # Use format() instead of f-string to avoid conflicts with JavaScript curly braces
+    html_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -286,15 +288,18 @@ def generate_conformance_test_html(parquet_path: str, output_path: str) -> None:
             const logger = new duckdb.consoleLogger(1);
             const browser = new duckdb.browser('', logger);
 
-            await browserstantiate({
-                query: {{
-                    async execute(queryStr) {{
-                        return await browser.query(queryStr);
-                    }}
-                }}
+            await browser.instantiate({{
+                path: 'duckdb.wasm',
             }});
 
-            db = browser;
+            const conn = await browser.connect();
+
+            db = {{
+                query: async (queryStr) => {{
+                    const result = await conn.query(queryStr);
+                    return result;
+                }}
+            }};
             return db;
         }}
 
@@ -330,7 +335,7 @@ def generate_conformance_test_html(parquet_path: str, output_path: str) -> None:
                 addTestSection('Test 3: Load Parquet via httpfs', 'Loading Parquet file from local filesystem...');
                 await db.query(`
                     CREATE TABLE listings AS
-                    SELECT * FROM '{parquet_path}'
+                    SELECT * FROM read_parquet('""" + parquet_path + """')
                 `);
                 markTestPass('Test 3: Load Parquet via httpfs');
                 passed++;
@@ -354,7 +359,7 @@ def generate_conformance_test_html(parquet_path: str, output_path: str) -> None:
                 const extra = actualColumns.filter(col => !expectedColumns.includes(col));
 
                 if (missing.length > 0 || extra.length > 0) {{
-                    throw new Error(`Schema mismatch! Missing: ${{missing.join(', ')}}}, Extra: ${{extra.join(', ')}}`);
+                    throw new Error(`Schema mismatch! Missing: ${{missing.join(', ')}}, Extra: ${{extra.join(', ')}}`);
                 }}
                 markTestPass('Test 4: Verify Schema');
                 passed++;
