@@ -425,6 +425,140 @@
             border-left: 4px solid #ffc107;
         }
 
+        /* Error State Components */
+        .error-state {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .error-state-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #721c24;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .error-state-icon {
+            font-size: 1.5rem;
+        }
+
+        .error-state-message {
+            color: #721c24;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+
+        .error-state-details {
+            background: #fff;
+            border: 1px solid #f5c6cb;
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 0.9rem;
+        }
+
+        .error-state-details h4 {
+            color: #721c24;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .error-state-details ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #721c24;
+        }
+
+        .error-state-details li {
+            margin-bottom: 8px;
+        }
+
+        .error-state-details code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85rem;
+            color: #c7254e;
+        }
+
+        .error-retry-button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+
+        .error-retry-button:hover {
+            background: #c82333;
+        }
+
+        .error-retry-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .loading-state {
+            background: #e7f5ff;
+            border-left: 4px solid #007bff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: #004085;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        .fallback-mode {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .fallback-mode-title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .fallback-mode-text {
+            color: #856404;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -520,6 +654,23 @@
                 </div>
 
                 <div class="filter-group">
+                    <label for="min-uplink">Minimum Uplink (Mbit/s)</label>
+                    <input type="number" id="min-uplink" value="0" min="0" step="100" placeholder="Any">
+                </div>
+
+                <div class="filter-group">
+                    <label for="cpu-model">CPU Model (contains)</label>
+                    <input type="text" id="cpu-model" value="" placeholder="e.g. 5950X, E5-2680">
+                </div>
+
+                <div class="filter-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="ecc-memory">
+                        <label for="ecc-memory">ECC memory only</label>
+                    </div>
+                </div>
+
+                <div class="filter-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="benchmark-matched-only">
                         <label for="benchmark-matched-only">Benchmark matched only</label>
@@ -545,6 +696,12 @@
             <button class="reset-filters" id="reset-filters">Reset Filters</button>
         </div>
 
+        <!-- Error States Container -->
+        <div id="error-container"></div>
+
+        <!-- Loading State Container -->
+        <div id="loading-container"></div>
+
         <!-- Results -->
         <div class="results">
             <h2>📊 Results</h2>
@@ -563,6 +720,13 @@
     <script>
         // Hetzner Cloud pricing lookup table
         let cloudPricingData = [];
+
+        // Error state management
+        let currentErrorState = null;
+        let isLoadingData = false;
+        let duckDBLoadFailed = false;
+        let parquetFetchFailed = false;
+        let usingFallbackData = false;
 
         // Load Cloud pricing data
         async function loadCloudPricing() {
@@ -696,7 +860,7 @@
             ]
         };
 
-        // Mock listings data (in production, this would come from DuckDB-WASM + Parquet)
+        // Mock listings data (fallback when real data loading fails)
         const mockListings = [
             {
                 id: 1,
@@ -712,7 +876,9 @@
                 price_per_benchmark_point_single: 0.01073,
                 price_per_gb_ram: 0.36,
                 price_per_tb_disk: 22.99,
-                location: "fsn"
+                location: "fsn",
+                uplink_speed: 1000,
+                ecc_memory: false
             },
             {
                 id: 2,
@@ -728,7 +894,9 @@
                 price_per_benchmark_point_single: 0.01335,
                 price_per_gb_ram: 0.45,
                 price_per_tb_disk: 7.13,
-                location: "nbg"
+                location: "nbg",
+                uplink_speed: 1000,
+                ecc_memory: true
             },
             {
                 id: 3,
@@ -744,7 +912,9 @@
                 price_per_benchmark_point_single: 0.00585,
                 price_per_gb_ram: 0.71,
                 price_per_tb_disk: 22.75,
-                location: "hel"
+                location: "hel",
+                uplink_speed: 100,
+                ecc_memory: false
             },
             {
                 id: 4,
@@ -760,7 +930,9 @@
                 price_per_benchmark_point_single: 0.01012,
                 price_per_gb_ram: 0.60,
                 price_per_tb_disk: 38.25,
-                location: "fsn"
+                location: "fsn",
+                uplink_speed: 1000,
+                ecc_memory: false
             },
             {
                 id: 5,
@@ -776,7 +948,27 @@
                 price_per_benchmark_point_single: null,
                 price_per_gb_ram: 0.56,
                 price_per_tb_disk: 18.00,
-                location: "nbg"
+                location: "nbg",
+                uplink_speed: 100,
+                ecc_memory: false
+            },
+            {
+                id: 6,
+                cpu_model: "Xeon E5-2690 v4",
+                cpu_cores: 28,
+                ram_gb: 128,
+                disks: [{ type: "nvme", size_tb: 2 }],
+                price_effective_monthly: 52.00,
+                benchmark_multi: 34521,
+                benchmark_single: 2589,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00151,
+                price_per_benchmark_point_single: 0.02009,
+                price_per_gb_ram: 0.41,
+                price_per_tb_disk: 26.00,
+                location: "hel",
+                uplink_speed: 1000,
+                ecc_memory: true
             }
         ];
 
@@ -818,6 +1010,15 @@
             const location = document.getElementById('location').value;
             if (location) params.set('location', location);
 
+            const minUplink = document.getElementById('min-uplink').value;
+            if (minUplink && parseInt(minUplink) > 0) params.set('min_uplink', minUplink);
+
+            const cpuModel = document.getElementById('cpu-model').value;
+            if (cpuModel) params.set('cpu_model', cpuModel);
+
+            const eccMemory = document.getElementById('ecc-memory').checked;
+            if (eccMemory) params.set('ecc_memory', 'true');
+
             const benchmarkMatchedOnly = document.getElementById('benchmark-matched-only').checked;
             if (benchmarkMatchedOnly) params.set('benchmark_matched_only', 'true');
 
@@ -842,6 +1043,9 @@
                               params.has('disk_type') ||
                               params.has('min_disk') ||
                               params.has('location') ||
+                              params.has('min_uplink') ||
+                              params.has('cpu_model') ||
+                              params.has('ecc_memory') ||
                               params.has('benchmark_matched_only') ||
                               params.has('best_deal');
 
@@ -956,6 +1160,18 @@
 
                 if (params.has('location')) {
                     document.getElementById('location').value = params.get('location');
+                }
+
+                if (params.has('min_uplink')) {
+                    document.getElementById('min-uplink').value = params.get('min_uplink');
+                }
+
+                if (params.has('cpu_model')) {
+                    document.getElementById('cpu-model').value = params.get('cpu_model');
+                }
+
+                if (params.has('ecc_memory')) {
+                    document.getElementById('ecc-memory').checked = params.get('ecc_memory') === 'true';
                 }
 
                 if (params.has('benchmark_matched_only')) {
@@ -1136,11 +1352,14 @@
 
             // Reset all filter inputs
             document.getElementById('cpu-family').value = '';
+            document.getElementById('cpu-model').value = '';
             document.getElementById('min-ram').value = 0;
             document.getElementById('max-price').value = '';
             document.getElementById('disk-type').value = '';
             document.getElementById('min-disk').value = 0;
             document.getElementById('location').value = '';
+            document.getElementById('min-uplink').value = 0;
+            document.getElementById('ecc-memory').checked = false;
             document.getElementById('benchmark-matched-only').checked = false;
             document.getElementById('sort-axis').value = 'auto';
 
@@ -1162,11 +1381,14 @@
             }
             const filters = {
                 cpu_family: document.getElementById('cpu-family').value,
+                cpu_model: document.getElementById('cpu-model').value.trim().toLowerCase(),
                 min_ram: parseInt(document.getElementById('min-ram').value) || 0,
                 max_price: parseFloat(document.getElementById('max-price').value) || null,
                 disk_type: document.getElementById('disk-type').value,
                 min_disk: parseFloat(document.getElementById('min-disk').value) || 0,
                 location: document.getElementById('location').value,
+                min_uplink: parseInt(document.getElementById('min-uplink').value) || 0,
+                ecc_memory_only: document.getElementById('ecc-memory').checked,
                 benchmark_matched_only: document.getElementById('benchmark-matched-only').checked
             };
 
@@ -1179,6 +1401,9 @@
                     if (filters.cpu_family === 'xeon' && !cpuLower.includes('xeon')) return false;
                     if (filters.cpu_family === 'core' && !cpuLower.includes('core')) return false;
                 }
+
+                // CPU model filter (case-insensitive substring match)
+                if (filters.cpu_model && !listing.cpu_model.toLowerCase().includes(filters.cpu_model)) return false;
 
                 // RAM filter
                 if (listing.ram_gb < filters.min_ram) return false;
@@ -1199,6 +1424,14 @@
                 // Location filter
                 if (filters.location && listing.location !== filters.location) return false;
 
+                // Uplink speed filter
+                if (filters.min_uplink > 0) {
+                    if (!listing.uplink_speed || listing.uplink_speed < filters.min_uplink) return false;
+                }
+
+                // ECC memory filter
+                if (filters.ecc_memory_only && !listing.ecc_memory) return false;
+
                 // Benchmark matched filter
                 if (filters.benchmark_matched_only && !listing.benchmark_matched) return false;
 
@@ -1216,7 +1449,9 @@
                         else comparison = a.price_per_benchmark_point_multi - b.price_per_benchmark_point_multi;
                         break;
                     case 'price_per_benchmark_point_single':
-                        if (a.price_per_benchmark_point_single === null) comparison = -1;
+                        // NULLS FIRST: unscored listings appear at the top
+                        if (a.price_per_benchmark_point_single === null && b.price_per_benchmark_point_single === null) comparison = 0;
+                        else if (a.price_per_benchmark_point_single === null) comparison = -1;
                         else if (b.price_per_benchmark_point_single === null) comparison = 1;
                         else comparison = a.price_per_benchmark_point_single - b.price_per_benchmark_point_single;
                         break;
@@ -1287,7 +1522,7 @@
                         <div class="listing-title">
                             <h3>${listing.cpu_model} ${unscoredBadge}</h3>
                             <div class="listing-specs">
-                                ${listing.ram_gb}GB RAM • ${totalDiskSize}TB ${diskTypes} • ${getLocationLabel(listing.location)}
+                                ${listing.ram_gb}GB RAM ${listing.ecc_memory ? '(ECC)' : ''} • ${totalDiskSize}TB ${diskTypes} • ${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'} • ${getLocationLabel(listing.location)}
                             </div>
                             ${cloudBadge}
                         </div>
@@ -1364,7 +1599,7 @@
 
         // Event listeners for manual filter changes
         const filterInputs = [
-            'cpu-family', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'benchmark-matched-only'
+            'cpu-family', 'cpu-model', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'min-uplink', 'ecc-memory', 'benchmark-matched-only'
         ];
 
         filterInputs.forEach(id => {
@@ -1447,18 +1682,615 @@
             document.getElementById('sort-description').textContent = descriptions[userSortAxis] || descriptions['auto'];
         }
 
+        // Error state display functions
+        function showErrorState(errorType, details = {}) {
+            const container = document.getElementById('error-container');
+            const listingsContainer = document.getElementById('listings-container');
+            const loadingContainer = document.getElementById('loading-container');
+
+            // Clear loading state
+            loadingContainer.innerHTML = '';
+
+            // Hide listings when showing error
+            listingsContainer.style.display = 'none';
+
+            currentErrorState = errorType;
+
+            const errorStates = {
+                'duckdb-load-failed': {
+                    title: '⚠️ Database Loading Failed',
+                    message: 'Unable to load the in-browser database (DuckDB-WASM). This may be due to network restrictions or browser compatibility.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li><strong>Network blocked:</strong> Your browser or network may be blocking access to DuckDB-WASM from CDN. Check if content blockers or corporate firewalls are preventing WASM file downloads.</li>
+                            <li><strong>Browser compatibility:</strong> Your browser may not support WebAssembly. Try using a modern browser (Chrome 90+, Firefox 88+, Safari 14.1+).</li>
+                            <li><strong>CDN unavailable:</strong> The DuckDB-WASM CDN service may be temporarily unavailable. Try refreshing the page.</li>
+                            <li><strong>Memory limit:</strong> DuckDB-WASM may exceed your browser's memory allocation.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Error: <code>${details.error || 'Unknown error loading DuckDB-WASM'}</code></li>
+                            <li>WASM URL: <code>${details.wasmUrl || 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm'}</code></li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading Database'
+                },
+                'parquet-fetch-failed': {
+                    title: '📄 Data Loading Failed',
+                    message: 'Unable to load the auction data from Parquet files. The data source may be unavailable or inaccessible.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li><strong>Network unavailable:</strong> Cannot reach the Parquet data source. Check your internet connection.</li>
+                            <li><strong>CORS restrictions:</strong> Cross-Origin Resource Sharing may be blocking the request. The data server may need to allow access from this domain.</li>
+                            <li><strong>Data source offline:</strong> The Parquet file hosting service (R2 bucket, CDN) may be temporarily unavailable.</li>
+                            <li><strong>Invalid URL:</strong> The Parquet file URL may be incorrect or the file may have been moved.</li>
+                            <li><strong>File format error:</strong> The Parquet file may be corrupted or in an incompatible format.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Error: <code>${details.error || 'Failed to fetch Parquet data'}</code></li>
+                            <li>Attempted URL: <code>${details.url || 'Parquet data source'}</code></li>
+                            <li>HTTP Status: <code>${details.httpStatus || 'Unknown'}</code></li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading Data'
+                },
+                'both-failed': {
+                    title: '❌ System Initialization Failed',
+                    message: 'Both the database engine and data loading failed. The dashboard cannot function without these components.',
+                    details: `
+                        <h4>Multiple Failures Detected:</h4>
+                        <ul>
+                            <li><strong>Database engine:</strong> Could not load DuckDB-WASM</li>
+                            <li><strong>Data source:</strong> Could not load Parquet auction data</li>
+                        </ul>
+                        <h4>This may indicate:</h4>
+                        <ul>
+                            <li>Severe network restrictions or firewall blocking external resources</li>
+                            <li>Browser compatibility issues with WebAssembly</li>
+                            <li>Complete service outage of data infrastructure</li>
+                            <li>Corrupted browser cache or extensions interfering with resource loading</li>
+                        </ul>
+                        <h4>Troubleshooting Steps:</h4>
+                        <ul>
+                            <li>Try a different browser (Chrome, Firefox, Safari)</li>
+                            <li>Disable browser extensions that might block scripts or network requests</li>
+                            <li>Check if you can access other websites</li>
+                            <li>Try incognito/private browsing mode</li>
+                            <li>Clear browser cache and reload</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Full Initialization'
+                },
+                'cors-blocked': {
+                    title: '🔒 Access Blocked by CORS Policy',
+                    message: 'Your browser is blocking access to the auction data due to Cross-Origin Resource Sharing restrictions.',
+                    details: `
+                        <h4>What is CORS?</h4>
+                        <ul>
+                            <li>CORS is a security feature that prevents websites from accessing data on other domains without permission.</li>
+                            <li>The data server needs to explicitly allow this domain to access the Parquet files.</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>For developers:</strong> Configure the data server to send appropriate CORS headers: <code>Access-Control-Allow-Origin: *</code> or specific domains.</li>
+                            <li><strong>For users:</strong> This error typically requires server-side configuration changes. Contact the service provider.</li>
+                            <li><strong>Workaround:</strong> Some browser extensions can bypass CORS for testing, but this is not recommended for security.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Blocked resource: <code>${details.url || 'Parquet data file'}</code></li>
+                            <li>Request origin: <code>${window.location.origin}</code></li>
+                        </ul>
+                    `,
+                    retryable: false
+                },
+                'memory-limit': {
+                    title: '💾 Memory Limit Exceeded',
+                    message: 'The dashboard requires more browser memory than is currently available to process the auction data.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li>Browser tab memory limit reached (typically 1-4GB depending on browser)</li>
+                            <li>Other tabs consuming significant memory</li>
+                            <li>Device has insufficient available RAM</li>
+                            <li>Parquet file is very large and requires substantial memory to process</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>Close other browser tabs</strong> to free up memory</li>
+                            <li><strong>Restart your browser</strong> to clear memory leaks</li>
+                            <li><strong>Use a 64-bit browser</strong> if available (higher memory limits)</li>
+                            <li><strong>Try a different browser</strong> - some handle memory better than others</li>
+                            <li><strong>Close other applications</strong> on your computer</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry After Closing Other Tabs'
+                },
+                'timeout': {
+                    title: '⏱️ Loading Timeout',
+                    message: 'The data took too long to load and the request timed out. This may be due to slow network or large data files.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li>Slow internet connection or high latency</li>
+                            <li>Large Parquet file requiring significant download time</li>
+                            <li>Server processing time for complex queries</li>
+                            <li>Network congestion or routing issues</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>Check your connection speed</strong> - try running a speed test</li>
+                            <li><strong>Refresh the page</strong> - temporary network issues may resolve</li>
+                            <li><strong>Try a different network</strong> - switch between WiFi and mobile data</li>
+                            <li><strong>Try during off-peak hours</strong> - network congestion may be lower</li>
+                            <li><strong>Use a wired connection</strong> if available for more stable connectivity</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading'
+                },
+                'unknown-error': {
+                    title: '❓ Unexpected Error',
+                    message: 'An unexpected error occurred while loading the dashboard.',
+                    details: `
+                        <h4>Error Details:</h4>
+                        <ul>
+                            <li>Error message: <code>${details.error || 'Unknown error'}</code></li>
+                            <li>Error type: <code>${details.errorType || 'Unknown'}</code></li>
+                        </ul>
+                        <h4>General Troubleshooting:</h4>
+                        <ul>
+                            <li>Refresh the page and try again</li>
+                            <li>Check your browser console for more error details (F12)</li>
+                            <li>Try a different browser</li>
+                            <li>Clear your browser cache</li>
+                            <li>If the problem persists, contact support with the error details above</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Try Again'
+                }
+            };
+
+            const errorState = errorStates[errorType] || errorStates['unknown-error'];
+
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-state-title">
+                        <span class="error-state-icon">⚠️</span>
+                        <span>${errorState.title}</span>
+                    </div>
+                    <div class="error-state-message">${errorState.message}</div>
+                    <div class="error-state-details">${errorState.details}</div>
+                    ${errorState.retryable ? `<button class="error-retry-button" onclick="${details.retryAction || 'retryDataLoad()'}">${errorState.retryAction}</button>` : ''}
+                </div>
+            `;
+
+            container.style.display = 'block';
+        }
+
+        function showLoadingState(message = 'Loading auction data...') {
+            const container = document.getElementById('loading-container');
+            const errorContainer = document.getElementById('error-container');
+
+            // Clear any existing error
+            errorContainer.innerHTML = '';
+            errorContainer.style.display = 'none';
+
+            // Show loading state
+            container.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">${message}</div>
+                </div>
+            `;
+
+            container.style.display = 'block';
+            isLoadingData = true;
+        }
+
+        function hideLoadingState() {
+            const container = document.getElementById('loading-container');
+            const listingsContainer = document.getElementById('listings-container');
+
+            container.innerHTML = '';
+            container.style.display = 'none';
+            listingsContainer.style.display = 'block';
+            isLoadingData = false;
+        }
+
+        function showFallbackMode() {
+            const container = document.getElementById('error-container');
+            const listingsContainer = document.getElementById('listings-container');
+
+            // Hide error state, show listings
+            container.innerHTML = `
+                <div class="fallback-mode">
+                    <div class="fallback-mode-title">⚠️ Using Sample Data</div>
+                    <div class="fallback-mode-text">
+                        The dashboard is currently displaying sample/mock data because the live auction data could not be loaded.
+                        This is for demonstration purposes only. The filters and sorting work, but the results are not real auction listings.
+                        ${usingFallbackData ? '<br><strong>Original error:</strong> ' + currentErrorState : ''}
+                    </div>
+                </div>
+            `;
+
+            container.style.display = 'block';
+            listingsContainer.style.display = 'block';
+            usingFallbackData = true;
+        }
+
+        function clearErrorState() {
+            const container = document.getElementById('error-container');
+            const listingsContainer = document.getElementById('listings-container');
+
+            container.innerHTML = '';
+            container.style.display = 'none';
+            listingsContainer.style.display = 'block';
+            currentErrorState = null;
+        }
+
+        // Retry function that will be called from error buttons
+        async function retryDataLoad() {
+            showLoadingState('Retrying data load...');
+            clearErrorState();
+
+            try {
+                // Retry the initialization process
+                await init();
+            } catch (error) {
+                console.error('Retry failed:', error);
+                showErrorState('unknown-error', { error: error.message });
+            }
+        }
+
+        // Make retry function globally available for onclick handlers
+        window.retryDataLoad = retryDataLoad;
+
+        // Real DuckDB-WASM and Parquet loading with error handling
+        let realListings = []; // Will store loaded data from Parquet
+        let db = null; // DuckDB instance
+
+        async function loadRealDataWithFallback() {
+            showLoadingState('Loading auction data from Parquet files...');
+
+            try {
+                // Try to load real data
+                await loadDuckDBAndParquet();
+                hideLoadingState();
+                return realListings;
+            } catch (error) {
+                console.error('Failed to load real data, falling back to mock data:', error);
+
+                // Determine error type and show appropriate error state
+                let errorType = 'unknown-error';
+                let errorDetails = { error: error.message };
+
+                if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
+                    errorType = 'timeout';
+                } else if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
+                    errorType = 'cors-blocked';
+                    errorDetails.url = error.url;
+                } else if (error.message.includes('memory') || error.message.includes('Memory')) {
+                    errorType = 'memory-limit';
+                } else if (error.message.includes('DuckDB') || error.message.includes('WASM')) {
+                    errorType = 'duckdb-load-failed';
+                    duckDBLoadFailed = true;
+                } else if (error.message.includes('Parquet') || error.message.includes('fetch')) {
+                    errorType = 'parquet-fetch-failed';
+                    parquetFetchFailed = true;
+                } else if (duckDBLoadFailed && parquetFetchFailed) {
+                    errorType = 'both-failed';
+                }
+
+                // Show error state for a moment, then switch to fallback mode
+                showErrorState(errorType, errorDetails);
+
+                // Wait a moment so user sees the error, then switch to fallback mode
+                setTimeout(() => {
+                    showFallbackMode();
+                    // Initialize with mock data
+                    mockListings.length = 0; // Clear if needed
+                    mockListings.push(...getFallbackMockData());
+                }, 3000);
+
+                return mockListings;
+            }
+        }
+
+        async function loadDuckDBAndParquet() {
+            const startTime = Date.now();
+
+            try {
+                // Step 1: Load DuckDB-WASM
+                console.log('Loading DuckDB-WASM...');
+                const duckdb = await loadDuckDBWithTimeout();
+
+                // Step 2: Initialize DuckDB
+                console.log('Initializing DuckDB...');
+                const browser = new duckdb.browser('', new duckdb.consoleLogger(1));
+
+                await browser.instantiate({
+                    path: 'duckdb.wasm',
+                });
+
+                const conn = await browser.connect();
+
+                db = {
+                    query: async (queryStr) => {
+                        const result = await conn.query(queryStr);
+                        return result;
+                    }
+                };
+
+                console.log('DuckDB initialized successfully');
+
+                // Step 3: Load httpfs extension for remote Parquet access
+                console.log('Loading httpfs extension...');
+                await db.query("INSTALL httpfs");
+                await db.query("LOAD httpfs");
+                console.log('httpfs extension loaded');
+
+                // Step 4: Load Parquet data
+                console.log('Loading Parquet data...');
+                const parquetUrl = 'https://auction-data.example.com/listings.parquet'; // Replace with actual URL
+
+                await db.query(`
+                    CREATE TABLE listings AS
+                    SELECT * FROM read_parquet('${parquetUrl}')
+                `);
+
+                console.log('Parquet data loaded successfully');
+
+                // Step 5: Verify data and convert to our format
+                const countResult = await db.query("SELECT COUNT(*) as count FROM listings");
+                const count = countResult.toArray()[0].count;
+
+                if (count === 0) {
+                    throw new Error('No data found in Parquet file');
+                }
+
+                console.log(`Loaded ${count} listings from Parquet`);
+
+                // Step 6: Convert DuckDB results to our listing format
+                const listingsResult = await db.query('SELECT * FROM listings LIMIT 1000'); // Limit for performance
+                realListings = convertDuckDBResultToListings(listingsResult);
+
+                console.log(`Converted ${realListings.length} listings to internal format`);
+
+                // Replace mockListings with real data
+                mockListings.length = 0;
+                mockListings.push(...realListings);
+
+                const loadTime = Date.now() - startTime;
+                console.log(`Data loading complete in ${loadTime}ms`);
+
+            } catch (error) {
+                const loadTime = Date.now() - startTime;
+                console.error(`Data loading failed after ${loadTime}ms:`, error);
+
+                // Enhance error with more context
+                if (error.message) {
+                    throw new Error(`Failed to load auction data: ${error.message}`);
+                } else {
+                    throw new Error('Failed to load auction data: Unknown error');
+                }
+            }
+        }
+
+        async function loadDuckDBWithTimeout(timeoutMs = 30000) {
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('TimeoutError: DuckDB-WASM loading timed out after ' + timeoutMs + 'ms')), timeoutMs);
+            });
+
+            try {
+                const duckdb = await Promise.race([
+                    import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm'),
+                    timeoutPromise
+                ]);
+
+                return duckdb;
+            } catch (error) {
+                if (error.message.includes('Timeout')) {
+                    throw error;
+                }
+                throw new Error(`DuckDB-WASM load failed: ${error.message}. Check your internet connection and browser compatibility.`);
+            }
+        }
+
+        function convertDuckDBResultToListings(result) {
+            const rows = result.toArray();
+            return rows.map(row => ({
+                id: row.listing_id || row.id,
+                cpu_model: row.cpu_model || row.cpu_raw || 'Unknown CPU',
+                cpu_cores: row.cpu_cores || 0,
+                ram_gb: row.ram_gb || 0,
+                disks: parseDisksFromRow(row),
+                price_effective_monthly: (row.price_effective_monthly_cents || 0) / 100.0,
+                benchmark_multi: row.benchmark_multi || null,
+                benchmark_single: row.benchmark_single || null,
+                benchmark_matched: row.benchmark_matched || false,
+                price_per_benchmark_point_multi: row.price_per_benchmark_point_multi || null,
+                price_per_benchmark_point_single: row.price_per_benchmark_point_single || null,
+                price_per_gb_ram: row.price_per_gb_ram || 0,
+                price_per_tb_disk: row.price_per_tb_disk || 0,
+                location: row.location || 'unknown',
+                uplink_speed: row.uplink_speed_mbit || 0,
+                ecc_memory: row.ecc_memory || false
+            }));
+        }
+
+        function parseDisksFromRow(row) {
+            // This would need to be adapted based on actual Parquet schema
+            if (row.disks && Array.isArray(row.disks)) {
+                return row.disks;
+            }
+
+            // Fallback: parse from individual fields if available
+            const disks = [];
+            if (row.disk_type && row.disk_size_gb) {
+                disks.push({
+                    type: row.disk_type,
+                    size_gb: row.disk_size_gb,
+                    capacity_gb: row.disk_size_gb
+                });
+            }
+
+            return disks.length > 0 ? disks : [{ type: 'nvme', size_gb: 500, capacity_gb: 500 }];
+        }
+
+        function getFallbackMockData() {
+            // Return the original mock data
+            return [
+                {
+                    id: 1,
+                    cpu_model: "Ryzen 9 5950X",
+                    cpu_cores: 16,
+                    ram_gb: 128,
+                    disks: [{ type: "nvme", size_tb: 2 }],
+                    price_effective_monthly: 45.99,
+                    benchmark_multi: 51234,
+                    benchmark_single: 4287,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00090,
+                    price_per_benchmark_point_single: 0.01073,
+                    price_per_gb_ram: 0.36,
+                    price_per_tb_disk: 22.99,
+                    location: "fsn",
+                    uplink_speed: 1000,
+                    ecc_memory: false
+                },
+                {
+                    id: 2,
+                    cpu_model: "Xeon E5-2680 v4",
+                    cpu_cores: 14,
+                    ram_gb: 64,
+                    disks: [{ type: "hdd", size_tb: 4 }],
+                    price_effective_monthly: 28.50,
+                    benchmark_multi: 18907,
+                    benchmark_single: 2134,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00151,
+                    price_per_benchmark_point_single: 0.01335,
+                    price_per_gb_ram: 0.45,
+                    price_per_tb_disk: 7.13,
+                    location: "nbg",
+                    uplink_speed: 1000,
+                    ecc_memory: true
+                },
+                {
+                    id: 3,
+                    cpu_model: "Core i7-12700",
+                    cpu_cores: 12,
+                    ram_gb: 32,
+                    disks: [{ type: "nvme", size_tb: 1 }],
+                    price_effective_monthly: 22.75,
+                    benchmark_multi: 24843,
+                    benchmark_single: 3891,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00092,
+                    price_per_benchmark_point_single: 0.00585,
+                    price_per_gb_ram: 0.71,
+                    price_per_tb_disk: 22.75,
+                    location: "hel",
+                    uplink_speed: 100,
+                    ecc_memory: false
+                },
+                {
+                    id: 4,
+                    cpu_model: "Ryzen 7 5800X",
+                    cpu_cores: 8,
+                    ram_gb: 64,
+                    disks: [{ type: "nvme", size_tb: 1 }],
+                    price_effective_monthly: 38.25,
+                    benchmark_multi: 28756,
+                    benchmark_single: 3782,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00133,
+                    price_per_benchmark_point_single: 0.01012,
+                    price_per_gb_ram: 0.60,
+                    price_per_tb_disk: 38.25,
+                    location: "fsn",
+                    uplink_speed: 1000,
+                    ecc_memory: false
+                },
+                {
+                    id: 5,
+                    cpu_model: "Unknown CPU Model X",
+                    cpu_cores: 8,
+                    ram_gb: 32,
+                    disks: [{ type: "ssd", size_tb: 1 }],
+                    price_effective_monthly: 18.00,
+                    benchmark_multi: null,
+                    benchmark_single: null,
+                    benchmark_matched: false,
+                    price_per_benchmark_point_multi: null,
+                    price_per_benchmark_point_single: null,
+                    price_per_gb_ram: 0.56,
+                    price_per_tb_disk: 18.00,
+                    location: "nbg",
+                    uplink_speed: 100,
+                    ecc_memory: false
+                },
+                {
+                    id: 6,
+                    cpu_model: "Xeon E5-2690 v4",
+                    cpu_cores: 28,
+                    ram_gb: 128,
+                    disks: [{ type: "nvme", size_tb: 2 }],
+                    price_effective_monthly: 52.00,
+                    benchmark_multi: 34521,
+                    benchmark_single: 2589,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00151,
+                    price_per_benchmark_point_single: 0.02009,
+                    price_per_gb_ram: 0.41,
+                    price_per_tb_disk: 26.00,
+                    location: "hel",
+                    uplink_speed: 1000,
+                    ecc_memory: true
+                }
+            ];
+        }
+
         // Initialize
         async function init() {
             await loadCloudPricing();
             initStarterConfigs();
             updateSortDescription();
 
+            // Try to load real data with graceful fallback
+            // Set USE_REAL_DATA = true to attempt loading from DuckDB-WASM + Parquet
+            // Set USE_REAL_DATA = false to use mock data (for testing/demo)
+            const USE_REAL_DATA = false; // Change to true when real Parquet data is available
+
+            if (USE_REAL_DATA) {
+                try {
+                    await loadRealDataWithFallback();
+                } catch (error) {
+                    console.error('Even fallback failed:', error);
+                    // Show error and use hardcoded fallback
+                    showFallbackMode();
+                    const fallbackData = getFallbackMockData();
+                    mockListings.length = 0;
+                    mockListings.push(...fallbackData);
+                }
+            }
+
             // Try to restore filters from URL
             const restoredFromURL = restoreFiltersFromURL();
 
             // If no URL filters, run default initialization
             if (!restoredFromURL) {
-                filterAndSortListings();
+                // Default sort: price_per_benchmark_point_multi ascending NULLS FIRST
+                filterAndSortListings('price_per_benchmark_point_multi', 'asc');
             }
 
             updateStaleness();
