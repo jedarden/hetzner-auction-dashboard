@@ -166,6 +166,46 @@
             margin: 0;
         }
 
+        /* Sort Selector */
+        .sort-selector {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .sort-selector label {
+            font-weight: 600;
+            color: #343a40;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        .sort-selector select {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            background: white;
+            cursor: pointer;
+        }
+
+        .sort-selector select:focus {
+            outline: none;
+            border-color: #4c6ef5;
+            box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.1);
+        }
+
+        .sort-description {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
         /* Reset Filters Button */
         .reset-filters {
             background: #6c757d;
@@ -407,6 +447,21 @@
                 </div>
             </div>
 
+            <!-- Primary Sort Axis Selector -->
+            <div class="sort-selector">
+                <label for="sort-axis">📊 Primary Sort Axis:</label>
+                <select id="sort-axis">
+                    <option value="auto">Auto (use preset default)</option>
+                    <option value="price_per_benchmark_point_multi">Benchmark Value (multi-thread)</option>
+                    <option value="price_per_benchmark_point_single">Benchmark Value (single-thread)</option>
+                    <option value="price_per_gb_ram">Value per GB RAM</option>
+                    <option value="price_per_tb_disk">Value per TB Disk</option>
+                </select>
+            </div>
+            <div class="sort-description" id="sort-description">
+                The default sort method prioritizes overall value (price per benchmark point). Choose a different primary axis to optimize for RAM-heavy or storage-heavy workloads.
+            </div>
+
             <button class="reset-filters" id="reset-filters">Reset Filters</button>
         </div>
 
@@ -589,6 +644,7 @@
         ];
 
         let currentPreset = null;
+        let userSortAxis = 'auto'; // 'auto' means use preset's default, otherwise specific sort field
 
         // Initialize starter configs UI
         function initStarterConfigs() {
@@ -612,6 +668,7 @@
         // Apply a preset configuration
         function applyPreset(preset) {
             currentPreset = preset;
+            userSortAxis = 'auto'; // Reset to auto when applying preset
 
             // Update active state
             document.querySelectorAll('.config-preset').forEach(el => {
@@ -660,6 +717,7 @@
         // Reset filters to default state
         function resetFilters() {
             currentPreset = null;
+            userSortAxis = 'auto'; // Reset to auto when resetting filters
 
             // Remove active state from all presets
             document.querySelectorAll('.config-preset').forEach(el => {
@@ -680,7 +738,12 @@
         }
 
         // Filter and sort listings based on current filters
-        function filterAndSortListings(sortBy = 'price_per_benchmark_point_multi', sortDirection = 'asc') {
+        function filterAndSortListings(presetSortBy = 'price_per_benchmark_point_multi', sortDirection = 'asc') {
+            // Determine effective sort method based on user selection
+            let sortBy = presetSortBy;
+            if (userSortAxis !== 'auto') {
+                sortBy = userSortAxis;
+            }
             const filters = {
                 cpu_family: document.getElementById('cpu-family').value,
                 min_ram: parseInt(document.getElementById('min-ram').value) || 0,
@@ -844,6 +907,11 @@
 
         // Update sort label
         function updateSortLabel(sortBy) {
+            // If user has overridden sort, show that
+            if (userSortAxis !== 'auto') {
+                sortBy = userSortAxis;
+            }
+
             const labels = {
                 price_per_benchmark_point_multi: 'Value (multi-thread)',
                 price_per_benchmark_point_single: 'Value (single-thread)',
@@ -884,8 +952,35 @@
         // Reset button
         document.getElementById('reset-filters').addEventListener('click', resetFilters);
 
+        // Sort axis selector
+        document.getElementById('sort-axis').addEventListener('change', (e) => {
+            userSortAxis = e.target.value;
+            // Clear preset selection when user manually chooses sort axis
+            if (currentPreset) {
+                currentPreset = null;
+                document.querySelectorAll('.config-preset').forEach(el => {
+                    el.classList.remove('active');
+                });
+            }
+            updateSortDescription();
+            filterAndSortListings();
+        });
+
+        // Update sort description based on current selection
+        function updateSortDescription() {
+            const descriptions = {
+                'auto': 'The default sort method prioritizes overall value (price per benchmark point). Choose a different primary axis to optimize for RAM-heavy or storage-heavy workloads.',
+                'price_per_benchmark_point_multi': 'Sorts by price per multi-thread benchmark point. Best for most workloads where multi-core performance matters.',
+                'price_per_benchmark_point_single': 'Sorts by price per single-thread benchmark point. Best for latency-sensitive or single-threaded applications.',
+                'price_per_gb_ram': 'Sorts by price per GB of RAM. Best for in-memory caching, databases, or RAM-intensive workloads.',
+                'price_per_tb_disk': 'Sorts by price per TB of disk storage. Best for file servers, backups, or storage-intensive applications.'
+            };
+            document.getElementById('sort-description').textContent = descriptions[userSortAxis] || descriptions['auto'];
+        }
+
         // Initialize
         initStarterConfigs();
+        updateSortDescription();
         filterAndSortListings();
         updateStaleness();
 
