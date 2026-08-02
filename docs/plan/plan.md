@@ -1,8 +1,10 @@
 # hetzner-auction-dashboard Plan
 
+_Last updated: 2026-08-01._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it.
+
 ## Overview
 
-A fully static, client-side dashboard for browsing Hetzner's dedicated server auction. A separate scheduled pipeline fetches auction listings, enriches each one with a CPU benchmark score and derived cost-efficiency metrics, and publishes the result as a single flat Parquet file. The browser loads that Parquet file directly into DuckDB-WASM and does all search/filtering/sorting locally via SQL — there is no client-side join and no per-request backend API.
+A fully static, client-side dashboard for browsing Hetzner's dedicated server auction. A separate scheduled pipeline fetches auction listings, enriches each one with a CPU benchmark score and derived cost-efficiency metrics, and publishes the result as a single flat Parquet file. The browser loads that Parquet file directly into DuckDB-WASM and does all search/filtering/sorting locally via SQL — there is no client-side join and no per-request backend API. Success looks like: reaching for this dashboard instead of Hetzner's own auction page whenever deal-hunting, because it shows the same listings ranked by real value — price per benchmark point — instead of raw price alone.
 
 ## Competitive Positioning
 
@@ -17,6 +19,55 @@ The gap isn't "does a benchmark score exist" — it's that nobody has paired goo
 
 This project's differentiation, in priority order: **(a)** treat the benchmark join itself as the core deliverable and keep it accurate and well-covered (unmatched CPUs surfaced, not silently dropped or guessed — see Benchmark Strategy), **(b)** expose value as separate, transparent per-resource metrics rather than one opaque blended score, **(c)** leave room to grow into Server-Radar-grade breadth (history, alerts) later without having to re-architect, since v1 deliberately does not compete on that axis yet.
 
+## What It Is NOT
+
+- **Not a price-alert/notification bot.** No push notifications, email, or webhooks in v1 — performance-normalized alerting is a named v2 candidate, gated on the historical-stats work landing first.
+- **Not a marketplace or reseller.** This never buys, holds, or resells servers, and never wraps Hetzner's checkout flow. It's a read-only view over data Hetzner already publishes; ordering still happens on Hetzner's own site.
+- **Not a general-purpose CPU benchmark database.** `benchmark-map/` exists only to answer "what's this Hetzner auction listing's CPU worth" — it only ever contains CPUs that have actually appeared in the auction feed, not a standalone PassMark mirror.
+- **Not a client-side join.** The browser never computes or looks up a benchmark score at query time — it only filters/sorts a column already joined server-side into the Parquet file (see Benchmark Strategy). If a future UI change ever seems to need a lookup against `benchmark-map/` in the browser, that's a signal the pipeline is missing a precomputed field, not a signal to add a join client-side.
+
+## Acceptance Scenarios
+
+### Scenario 1: Happy Path — Filter by CPU Family + RAM
+**Setup:** Pipeline has published a current Parquet snapshot; the dashboard is loaded in a browser.
+**Action:** User sets a CPU-family filter (e.g. "Ryzen") and a minimum-RAM filter (e.g. ≥64GB), leaving everything else at defaults.
+**Expected:** Results show only matching listings, sorted by `price_per_benchmark_point` ascending (the default sort); any listing with `benchmark_matched = false` is visibly flagged as unscored rather than sorted to the bottom or omitted.
+**Pass criteria:**
+- Filtered set matches only listings satisfying both filters
+- Default sort order is `price_per_benchmark_point` ascending
+- Unscored listings appear with an explicit "unscored" indicator, never blank or omitted
+**Fail criteria:**
+- An unscored listing is silently dropped from results
+- Default sort is raw price instead of `price_per_benchmark_point`
+
+### Scenario 2: Degraded — Hetzner Feed Unreachable
+**Setup:** A scheduled 10-minute pipeline run starts; Hetzner's auction feed endpoint times out or errors.
+**Action:** Pipeline attempts its normal fetch → normalize → compute → publish cycle.
+**Expected:** Pipeline aborts before touching the live Parquet key in R2 (see Pipeline Run Lifecycle); the previously published snapshot keeps serving unchanged; the failure is logged.
+**Pass criteria:**
+- Live R2 key is byte-identical to before the failed run
+- Dashboard continues to load and query the last-known-good snapshot
+- Failure is logged with enough detail to diagnose (endpoint, status/error, timestamp)
+**Fail criteria:**
+- Live key is partially overwritten or corrupted
+- Dashboard shows broken/empty results because of an upstream failure it had no part in
+
+### Scenario 3: Degraded — Client Parquet/DuckDB-WASM Load Failure
+**Setup:** Dashboard loads in a browser; the Parquet fetch via DuckDB-WASM httpfs fails (network error, CORS misconfiguration, or WASM init failure).
+**Action:** User opens the dashboard normally.
+**Expected:** Dashboard shows a plain error state naming the likely cause (see Graceful Degradation), instead of a blank page or silent hang.
+**Pass criteria:**
+- An explicit error message is shown, never a blank/frozen UI
+- No stale or partial data is rendered as if it were current
+**Fail criteria:**
+- Blank page with no indication anything went wrong
+- Partial/garbled data rendered without an error indicator
+
+### Scenario 4: Success Metrics
+- **Performance:** `[FILL IN once real data volume is known — see Performance Ceiling]`. Rough expectation is sub-second initial query time and near-instant re-filter/re-sort on a typical current-auction-sized snapshot, since DuckDB-WASM's range requests only fetch the row groups a query touches.
+- **Functionality:** v1 supports every filter/sort listed in Client Dashboard Scope (v1) against a live, benchmark-joined snapshot, with correct staleness display and unscored-listing flagging. History, alerts, and comparison view are explicitly not required for v1.
+- **Adoption:** the one signal that matters for a solo tool — checking this dashboard instead of opening Hetzner's own Server Auction page directly when deal-hunting. Catching myself opening Hetzner's page out of habit within the first month is a sign the dashboard isn't pulling its weight yet.
+
 ## Architecture
 
 Two independent halves connected only by a Parquet file:
@@ -29,6 +80,26 @@ Two independent halves connected only by a Parquet file:
 - Writes ONE denormalized Parquet file — no relational structure, every column a query might filter/sort on is already present.
 - Publishes the Parquet file to **Cloudflare R2** (native CORS + HTTP range-request support, required for DuckDB-WASM to do partial reads instead of downloading the whole file on every page load). Chosen over self-hosting on Garage/SeaweedFS to avoid standing up public HTTPS ingress for what's otherwise a personal tool, and it matches Server Radar's proven architecture for this exact use case. Requires an R2 API token stored as a cluster secret (OpenBao/ExternalSecret, matching existing patterns) for the pipeline to push to.
 - Runs as a long-lived Deployment with an internal refresh loop (house rule: no Job/CronJob) on a Rackspace Spot cluster, wired through GitOps (`jedarden/declarative-config`, `k8s/` path) — never a live kubectl mutation. Compute (pipeline) and hosting (R2/Pages) are intentionally decoupled: the cluster only needs egress to Cloudflare's API, nothing is served from cluster ingress.
+- **Format verification.** Before the pipeline depends on it in production, the chosen Parquet writer's output is confirmed compatible with DuckDB-WASM's httpfs range-request reads via the conformance test in Testing Strategy — checked once ahead of Phase 4/5, not re-verified every run.
+- **Operational visibility.** The pipeline logs the timestamp of its last successful publish, so a stalled pipeline is visible without needing the dashboard open — the same `fetched_at` value the client already surfaces as a staleness indicator, just also checked from the pipeline side.
+
+### Pipeline Run Lifecycle
+
+Every run — both the v1 current-snapshot file and, later, each v2 history file — follows the same lifecycle, so one failure mode and one fix covers both:
+
+1. **Fetch** — pull current listings from Hetzner's auction feed.
+2. **Normalize/match** — clean CPU strings, resolve against `benchmark-map/`, flag unmatched.
+3. **Compute** — derive `price_per_benchmark_point`, `price_per_gb_ram`, `price_per_tb_disk`, effective monthly cost.
+4. **Write to a temp key in R2** — never write directly to the live key the client reads.
+5. **Verify** — confirm the temp object is readable and structurally sane (non-zero size, parses as valid Parquet) before it's allowed to become live.
+6. **Atomic swap** — promote the temp key to the live key (copy-then-delete-old, since R2/S3-compatible storage has no native rename; the old key is only deleted after the new one is confirmed in place).
+7. **On failure at any step** — abort immediately without touching the live key. The previously published snapshot keeps serving untouched; the run is simply retried next cycle.
+
+This is the same anti-pattern-avoidance the plan already reasons through for v2 history files (never read-modify-write a growing file) — applied back to v1, which faces the identical overwrite risk every 10-minute cycle and needs the same guarantee, despite not having stated one until now.
+
+### Concurrency Model
+
+The pipeline Deployment **MUST run as a single active writer** (`replicas: 1`). A rolling redeploy could briefly overlap two pods running the lifecycle above concurrently — the temp-key-then-swap pattern is what keeps that safe regardless: whichever instance's swap lands last wins, and the client never sees a partial write, only either the old snapshot or a fully-written new one. This is deliberately simpler than a distributed lock — with a 10-minute cadence and swap-based publishing, a lost overlapping run just means one cycle's data doesn't make it live, never corruption.
 
 ### 2. Client (fully static, browser-only)
 
@@ -36,6 +107,23 @@ Two independent halves connected only by a Parquet file:
 - Loads the Parquet file over HTTP via DuckDB-WASM's httpfs, pointed at the R2 bucket's public URL, using range requests so only the needed row groups are fetched.
 - All search/filter/sort UI translates directly to SQL `WHERE`/`ORDER BY` against the single pre-joined table — no joins, no benchmark lookup, at query time.
 - No backend calls at request time. The only "dynamic" part of the deployed site is that the Parquet file itself changes on the pipeline's refresh cadence.
+
+### Dependency Integration Contracts
+
+- **Hetzner auction feed** — surface used: the public Server Auction listings endpoint, polled read-only every 10 minutes. Forbidden: no write/order calls; no Robot API authentication needed since this only reads public listings. Unavailable/changed: if the feed is unreachable or its schema changes shape (see Edge Case Catalog), the pipeline aborts the run and keeps serving the last published snapshot; a schema change additionally needs a manual pipeline update, since that's a code change, not a transient blip.
+- **Cloudflare R2** — surface used: S3-compatible PUT/COPY/DELETE for the temp-key-then-swap publish pattern (see Pipeline Run Lifecycle), plus the public bucket URL with CORS and range-request support for the client's reads. Forbidden: no read-modify-write against the live key, ever. Unavailable: pipeline aborts the run and retries next cycle — same handling as a feed outage.
+- **DuckDB-WASM / httpfs** — surface used: `read_parquet()` over an HTTP(S) URL with range requests, entirely client-side. Forbidden: no server-side query execution, no client-side benchmark join (see What It Is NOT). Unavailable/fails to load: see Graceful Degradation — the dashboard shows an explicit error state rather than a blank page.
+
+### Architecture Decision Records
+
+**ADR-1: Cloudflare R2 over self-hosted Garage/SeaweedFS.**
+Decision: publish the Parquet file to Cloudflare R2. Rationale: native CORS + HTTP range-request support required for DuckDB-WASM's partial reads, without standing up public HTTPS ingress for what's otherwise a personal tool, and it matches Server Radar's proven architecture for this exact use case. Rejected alternative: self-hosting on Garage or SeaweedFS — rejected because it would require its own public ingress and TLS just to serve one static file, for no real benefit over a managed object store built for exactly this. Invalidation trigger: if R2 cost or Cloudflare account limits ever become a real constraint (unlikely at this data volume), revisit self-hosting.
+
+**ADR-2: PassMark-only benchmark source for v1.**
+Decision: source CPU benchmark scores exclusively from PassMark in v1. Rationale: matches the proven approach of every existing implementation (Auction Browser+, hzfind, Server Auction Tracker) — no reason to start anywhere less-validated, and it keeps the matching pipeline to one schema instead of reconciling multiple sources upfront. Rejected alternative: launching with multi-source cross-validation (Geekbench/YABS) from day one — rejected because it multiplies matching complexity before the single-source join is even proven solid. Invalidation trigger: if unmatched-CPU coverage gaps stay persistently high after the override list has had a real chance to mature, promote the v2 cross-validation candidate ahead of schedule.
+
+**ADR-3: Separate per-resource value metrics instead of one blended score.**
+Decision: expose `price_per_benchmark_point`, `price_per_gb_ram`, and `price_per_tb_disk` as independent columns rather than a single weighted "Total Score." Rationale: a fixed arbitrary weighting (as Auction Browser+ and Server Auction Tracker do) hides the number that matters most for a given buyer's use case; separate, sortable columns let the user decide what to prioritize. Rejected alternative: a blended 0–100 score like the existing tools — rejected because it's exactly the category weakness this project differentiates against (see Competitive Positioning). Invalidation trigger: if personal usage shows a blended score would genuinely save filtering effort without hiding anything, reconsider it as an optional additional column — never as a replacement for the separate metrics.
 
 ## Components
 
@@ -67,6 +155,51 @@ Single flat table, one row per auction listing:
 - derived: `price_per_benchmark_point`, `price_per_gb_ram`, `price_per_tb_disk`
 - `fetched_at` (staleness display in the UI)
 
+This schema is the actual interface contract between the two halves of the system — the pipeline is the only writer, the client is the only reader, and neither side reads/writes anything else. Removing or renaming a column, or changing a column's type or unit (e.g. switching `price_base` from cents to a different currency unit), is a breaking change and needs the client updated in lockstep. Adding a new column is always safe — the client's SQL only ever references columns it already knows about, so an extra column is invisible until the UI is updated to use it.
+
+## Failure Handling & Data Safety
+
+### Edge Case Catalog
+
+| # | Name | Description | Resolution |
+|---|------|--------------|------------|
+| EC-1 | Empty feed result | Hetzner's feed returns zero listings for a run | Publish it if the response was well-formed (an empty auction is real, e.g. between drops); if malformed/error instead, abort per Pipeline Run Lifecycle and keep the last snapshot |
+| EC-2 | Feed schema change | Hetzner changes the shape/fields of the auction feed response | Fail closed: abort the run, log the parse error with a sample of the raw payload, keep serving the last snapshot until the pipeline's parser is updated for the new shape |
+| EC-3 | Ambiguous CPU match | A raw `cpu_raw` string matches more than one benchmark-map entry | Do not guess — treat as unmatched (`benchmark_matched = false`) and add to the unmatched-CPU report for manual override-list resolution, same as a zero-match case |
+| EC-4 | Listing ID reuse | Hetzner's `listing_id` reappears across ticks with different specs | Assumption: `listing_id` is unique within a single run but is NOT assumed stable in meaning across ticks — the pipeline never carries state keyed by `listing_id` between runs. If this assumption is wrong, v1's exposure is limited (no history yet), and v2's config-signature key deliberately sidesteps it, since that key already assumes listing IDs get reused |
+| EC-5 | Truncated/corrupt publish | R2 accepts the temp-key write but the resulting object is truncated or unreadable | Caught by the verify step in Pipeline Run Lifecycle before swap — a temp object that doesn't parse as valid Parquet never gets promoted to the live key |
+| EC-6 | Uncached Parquet range request | Client requests a byte range the CDN hasn't cached yet | Falls back to an R2 origin fetch for that range (normal cache-miss behavior) — slightly slower first load after each publish, not a correctness issue |
+
+### Failure Modes & Resilience
+
+Taxonomy by type, each cross-referencing the atomicity design in Pipeline Run Lifecycle:
+
+- **Feed/network failures** (Hetzner endpoint unreachable, timeout, non-200 response): abort the run before any write, keep serving the last snapshot, retry on the next 10-minute cycle. No backoff/retry-within-a-run needed — the next scheduled tick is the retry.
+- **Storage/R2 failures** (write rejected, auth failure, temp-key write succeeds but verify fails): abort before the swap step; the live key is never touched. Same retry-next-cycle handling as a feed failure.
+- **Client-load failures** (Parquet fetch fails, CORS error, DuckDB-WASM init fails in-browser): see Graceful Degradation — an explicit error state, never a silent blank page or stale-looking render.
+- **Internal matching-logic failures** (CPU normalization throws on an unexpected string, benchmark-map lookup errors): the one bad listing is skipped and logged (see Anti-Patterns Catalog and Security's untrusted-input policy) — a single malformed listing must never abort the whole run.
+
+### Anti-Patterns Catalog
+
+Consolidating the "deliberately do not" decisions already scattered through this plan into one place:
+
+- **No blended benchmark score.** Hides the number that matters most behind an arbitrary weighting — see ADR-3.
+- **Never guess an unmatched CPU's score.** A NULL/unscored state is always more honest than an estimate that could be wrong in either direction — see Benchmark Strategy.
+- **Never read-modify-write a growing R2 file.** No real locking on object storage, and it gets slower and riskier as the file grows — see the v2 history storage pattern and Pipeline Run Lifecycle.
+- **No client-side join or benchmark lookup.** The client only filters/sorts a pre-joined column; reintroducing a lookup in the browser undoes the entire point of precomputing the join server-side — see What It Is NOT.
+- **No live kubectl mutation of the pipeline Deployment.** All changes go through `declarative-config` + ArgoCD, matching the standing house rule — a live edit just gets reverted by selfHeal anyway.
+
+### Rollback & Safe Defaults
+
+The safe default for any pipeline run failure, at any step, is to do nothing to the live snapshot and simply try again next cycle. There's no separate rollback command to define, because the design never lets a bad run become visible in the first place (Pipeline Run Lifecycle's verify-then-swap gate) — the previously published snapshot IS the rollback state, always, by construction. Nothing about this system requires manual intervention to recover from a single failed run.
+
+### Graceful Degradation / Offline Mode
+
+Two distinct "something's wrong" states the client can be in, and what the user sees for each:
+
+- **Parquet fails to load in-browser** (network error, CORS misconfiguration, DuckDB-WASM init failure): an explicit error state naming the likely cause (e.g. "Could not load auction data — check your connection and reload"), never a blank page or silent hang — see Scenario 3.
+- **Pipeline has stopped updating, but the last snapshot still loads fine**: the dashboard loads and works normally; the existing staleness indicator driven by `fetched_at` (see Client Dashboard Scope) is what surfaces this — no separate "pipeline down" banner needed, since a stale-but-correct snapshot degrades gracefully on its own.
+
 ## Client Dashboard Scope (v1)
 
 Search/filter/sort only, over the current snapshot — no history, no alerts, no comparison view, no auto-buy. These are all proven features elsewhere (see research) that can be layered on later without changing the core architecture; v1 stays scoped to nailing the benchmark join and a clean filter/sort experience on top of it.
@@ -76,14 +209,69 @@ Search/filter/sort only, over the current snapshot — no history, no alerts, no
 - Default sort: `price_per_benchmark_point` ascending — reinforces that benchmark-adjusted value, not raw price, is the point.
 - Staleness indicator driven by `fetched_at`.
 
+### Performance Ceiling
+
+`docs/research/existing-tools.md` doesn't record an exact figure for how many listings Hetzner's Server Auction carries at any one time, so there's no verified data volume to size against yet. `[FILL IN once real listing-count data is observed from the pipeline's first few weeks of runs]` — the design should comfortably handle at least that scale, since DuckDB-WASM's range-request model only fetches the row groups a query touches rather than the whole file. If Hetzner's auction volume (or this schema's width) ever grows past what a single flat Parquet file can serve responsively client-side, the fallback is server-side pre-aggregation (a thin API doing the heavy filtering before the client sees rows) or narrower default filters on initial load — not a rearchitecture of the "no backend at request time" design.
+
+## Testing Strategy
+
+- **CPU-matching fixture set.** A curated set of real Hetzner auction CPU strings, including known-tricky variants (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4", differing whitespace/casing, a family with no benchmark entry at all), each asserted against its expected PassMark match — or explicit `benchmark_matched = false` for the intentionally-unmatchable ones. This is the project's core heuristic logic (see Benchmark Strategy), so it's the one place this kind of test pays for itself; everywhere else in this project is comparatively low-risk.
+- **Parquet/DuckDB-WASM conformance test.** Before Phase 5 begins, a round-trip test writes a sample Parquet file with the pipeline's chosen writer and confirms DuckDB-WASM can actually load and query it via httpfs range requests — the one hand-off point between the two halves of the architecture where "should work in theory" isn't good enough.
+- **Definition of done.** Before considering the pipeline or client phase complete: the CPU-matching fixture suite and the Parquet/DuckDB-WASM conformance test both pass. No CI-gated benchmark infrastructure beyond that — this is a solo hobby project, not a system with a regression budget to enforce.
+
+## Security
+
+Proportionate to what this actually is — a personal dashboard with no user accounts, no PII, and no external users.
+
+- **Threat model:** none, explicitly. There are no external users, no authentication, and no PII anywhere in the system. The only credential in the whole project is the R2 API token, used solely by the pipeline to publish the Parquet file.
+- **Secrets handling:** the R2 token is stored as an OpenBao-backed ExternalSecret (matching existing patterns in this environment), never logged by the pipeline, and rotated on the same ad-hoc cadence as other tokens in this environment — no fixed rotation schedule needed for a personal tool.
+- **Untrusted input:** Hetzner's auction feed is the one piece of external input this system consumes. Parse it defensively — a malformed field on a single listing gets that listing skipped and logged (see Failure Modes & Resilience), never a crash of the whole run.
+- **Supply chain:** pin the DuckDB-WASM version and pipeline library versions explicitly; no `:latest` image tags on the pipeline container, matching the house rule already in place for this environment.
+
+Explicitly out of scope at this scale: audit logging and a per-threat security matrix — there's no security boundary here worth building either for.
+
 ## Implementation Phases
 
-- [ ] Phase 1: Pipeline — fetch Hetzner auction data, define raw schema
-- [ ] Phase 2: Benchmark reference table + CPU-name matching/override system + unmatched-CPU reporting
-- [ ] Phase 3: Cost-metric computation + Parquet writer
-- [ ] Phase 4: R2 bucket + API token (secret via OpenBao/ExternalSecret) + refresh-loop Deployment via declarative-config
-- [ ] Phase 5: Client dashboard — DuckDB-WASM wiring + search/filter UI
-- [ ] Phase 6: Deploy pipeline to a Rackspace Spot cluster via GitOps; wire up Cloudflare Pages for `web/`
+- [ ] **Phase 1: Pipeline — fetch Hetzner auction data, define raw schema**
+  Delivers: a working fetcher against Hetzner's live auction feed and a defined raw schema for what a listing looks like before any enrichment.
+  Completion criteria:
+  - Fetcher successfully retrieves and parses a real auction response end-to-end
+  - Raw schema fields match Data Models' pre-enrichment columns (`listing_id`, `cpu_raw`, `ram_gb`, `disks`, `price_base`, etc.)
+  - A malformed/empty response is handled without crashing (see Edge Case Catalog EC-1/EC-2)
+
+- [ ] **Phase 2: Benchmark reference table + CPU-name matching/override system + unmatched-CPU reporting**
+  Delivers: the `benchmark-map/` artifact — PassMark reference table, alias table, manual override list, and the unmatched-CPU report the pipeline emits each run.
+  Completion criteria:
+  - The CPU-matching fixture set (Testing Strategy) resolves correctly against the reference/alias tables
+  - An intentionally-unmatchable CPU string produces `benchmark_matched = false`, never a guessed score
+  - Unmatched-CPU report is generated and lists every unresolved CPU seen in the fixture set
+
+- [ ] **Phase 3: Cost-metric computation + Parquet writer**
+  Delivers: `price_per_benchmark_point`, `price_per_gb_ram`, `price_per_tb_disk`, and effective monthly cost computed per listing, written to a single flat Parquet file.
+  Completion criteria:
+  - All three per-resource metrics compute correctly against a fixture set of known listings, including one with `benchmark_matched = false` (metric is NULL, never a divide-by-zero or fallback estimate)
+  - Parquet writer's output passes the DuckDB-WASM httpfs conformance test (Testing Strategy)
+
+- [ ] **Phase 4: R2 bucket + API token (secret via OpenBao/ExternalSecret) + refresh-loop Deployment via declarative-config**
+  Delivers: a running pipeline Deployment (`replicas: 1`, GitOps-managed) that fetches, computes, and publishes to R2 on the 10-minute cadence using the full temp-key-then-swap lifecycle.
+  Completion criteria:
+  - Deployment reconciles cleanly via ArgoCD from `declarative-config`
+  - R2 API token is stored as an ExternalSecret and never appears in pipeline logs
+  - A forced failure mid-run (e.g. killed fetch) leaves the live R2 key untouched, verified by comparing the object's hash before/after
+
+- [ ] **Phase 5: Client dashboard — DuckDB-WASM wiring + search/filter UI**
+  Delivers: the static `web/` site that loads the published Parquet file via DuckDB-WASM httpfs and implements all Client Dashboard Scope (v1) filters/sorts.
+  Completion criteria:
+  - Dashboard loads a real published snapshot and returns correct filtered/sorted results for each filter type in scope
+  - Default sort is `price_per_benchmark_point` ascending; unscored listings are visibly flagged, not hidden
+  - A simulated load failure (bad URL) shows the Graceful Degradation error state, not a blank page
+
+- [ ] **Phase 6: Deploy pipeline to a Rackspace Spot cluster via GitOps; wire up Cloudflare Pages for `web/`**
+  Delivers: both halves live in production — pipeline running unattended on its chosen cluster, `web/` served from Cloudflare Pages against the real R2 bucket.
+  Completion criteria:
+  - Pipeline completes at least 3 consecutive scheduled runs without manual intervention
+  - Cloudflare Pages deployment serves the dashboard and successfully loads the live Parquet file end-to-end
+  - Open Questions' cluster choice is resolved and reflected in `declarative-config`
 
 ## v2 / Future Candidates
 
@@ -130,5 +318,21 @@ Storing this without breaking the pipeline's stateless-per-run design (everythin
 
 ## Open Questions
 
-- Frontend framework choice (plain JS + DuckDB-WASM vs. a light framework) — low-stakes given how thin the UI is.
-- Which Rackspace Spot cluster hosts the pipeline — any is viable since the dataset regenerates on its own cadence and nothing is stateful; final choice TBD.
+- Frontend framework choice (plain JS + DuckDB-WASM vs. a light framework) — low-stakes given how thin the UI is. **Resolve before Phase 5** (client dashboard implementation needs this settled to start).
+- Which Rackspace Spot cluster hosts the pipeline — any is viable since the dataset regenerates on its own cadence and nothing is stateful; final choice TBD. **Resolve before Phase 6** (deployment phase needs a target cluster).
+
+## Risk Register
+
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|------|-----------|--------|------------|
+| R1 | CPU-matching produces false-positive matches (wrong benchmark score attached to a listing) | Medium | High | Manual override list + unmatched-CPU report surfaces gaps; the CPU-matching fixture set (Testing Strategy) catches known-tricky variants before they ship |
+| R2 | Cloudflare R2/Pages outage | Low | Medium | Pipeline aborts and retries next cycle (Pipeline Run Lifecycle); dashboard keeps serving the last snapshot it already loaded client-side until R2 recovers |
+| R3 | Hetzner changes the auction feed's format without notice | Medium | High | Pipeline fails closed on parse error (EC-2), keeps serving the last snapshot, logs the raw payload for a quick manual fix |
+| R4 | DuckDB-WASM hits a scale ceiling as Hetzner's auction volume grows | Low | Medium | See Performance Ceiling — fallback is server-side pre-aggregation or narrower default filters |
+| R5 | Concurrent pipeline writers corrupt the live Parquet file during a rolling redeploy | Low | High | Mitigated structurally by `replicas: 1` + the temp-key-then-swap pattern (Concurrency Model) — last swap wins, no partial writes ever visible |
+
+## Plan B / Fallback Strategies
+
+- **If DuckDB-WASM + R2 range requests turns out too slow at real scale** (R4): fall back to a thin server-side API doing the pre-filtering Hetzner-side, trading away some of the "no backend at request time" simplicity for scale headroom — the Parquet schema (Data Models) stays the contract either way, just read by a small service instead of directly by the browser.
+- **If PassMark coverage stays too sparse after the override list has matured** (ties to R1/ADR-2): prioritize manual overrides for the highest-volume unmatched CPUs first, ranked by how often they appear in the unmatched-CPU report, rather than broadening to multi-source matching before it's actually needed.
+- **If R2/Cloudflare Pages has a sustained outage** (R2): no separate plan needed — retry-next-cycle and last-known-good serving (Pipeline Run Lifecycle) are already the fallback.
