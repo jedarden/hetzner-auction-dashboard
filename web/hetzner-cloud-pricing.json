@@ -1,0 +1,135 @@
+{
+  "last_updated": "2026-08-02",
+  "currency": "EUR",
+  "pricing_note": "Monthly prices for standard Linux plans in Falkenstein/Default region. Cloud pricing changes rarely - this table should be manually updated when Hetzner announces price changes.",
+  "servers": [
+    {
+      "name": "CX11",
+      "cpu_cores": 1,
+      "ram_gb": 2,
+      "disk_gb": 20,
+      "price_monthly": 2.89,
+      "category": "standard"
+    },
+    {
+      "name": "CX21",
+      "cpu_cores": 2,
+      "ram_gb": 4,
+      "disk_gb": 40,
+      "price_monthly": 5.27,
+      "category": "standard"
+    },
+    {
+      "name": "CX31",
+      "cpu_cores": 2,
+      "ram_gb": 8,
+      "disk_gb": 80,
+      "price_monthly": 9.43,
+      "category": "standard"
+    },
+    {
+      "name": "CX41",
+      "cpu_cores": 4,
+      "ram_gb": 16,
+      "disk_gb": 160,
+      "price_monthly": 16.69,
+      "category": "standard"
+    },
+    {
+      "name": "CX51",
+      "cpu_cores": 8,
+      "ram_gb": 32,
+      "disk_gb": 240,
+      "price_monthly": 27.95,
+      "category": "standard"
+    },
+    {
+      "name": "CX52",
+      "cpu_cores": 16,
+      "ram_gb": 64,
+      "disk_gb": 360,
+      "price_monthly": 48.02,
+      "category": "standard"
+    },
+    {
+      "name": "CXP11",
+      "cpu_cores": 2,
+      "ram_gb": 4,
+      "disk_gb": 80,
+      "price_monthly": 7.61,
+      "category": "dedicated"
+    },
+    {
+      "name": "CXP21",
+      "cpu_cores": 4,
+      "ram_gb": 8,
+      "disk_gb": 160,
+      "price_monthly": 13.76,
+      "category": "dedicated"
+    },
+    {
+      "name": "CXP31",
+      "cpu_cores": 8,
+      "ram_gb": 16,
+      "disk_gb": 240,
+      "price_monthly": 24.56,
+      "category": "dedicated"
+    },
+    {
+      "name": "CXP41",
+      "cpu_cores": 16,
+      "ram_gb": 32,
+      "disk_gb": 360,
+      "price_monthly": 45.63,
+      "category": "dedicated"
+    },
+    {
+      "name": "CXP51",
+      "cpu_cores": 32,
+      "ram_gb": 64,
+      "disk_gb": 480,
+      "price_monthly": 86.22,
+      "category": "dedicated"
+    },
+    {
+      "name": "CCX11",
+      "cpu_cores": 2,
+      "ram_gb": 8,
+      "disk_gb": 80,
+      "price_monthly": 8.21,
+      "category": "dedicated_cpu"
+    },
+    {
+      "name": "CCX21",
+      "cpu_cores": 4,
+      "ram_gb": 16,
+      "disk_gb": 160,
+      "price_monthly": 14.82,
+      "category": "dedicated_cpu"
+    },
+    {
+      "name": "CCX31",
+      "cpu_cores": 8,
+      "ram_gb": 32,
+      "disk_gb": 240,
+      "price_monthly": 26.41,
+      "category": "dedicated_cpu"
+    },
+    {
+      "name": "CCX32",
+      "cpu_cores": 8,
+      "ram_gb": 64,
+      "disk_gb": 240,
+      "price_monthly": 35.73,
+      "category": "dedicated_cpu"
+    },
+    {
+      "name": "CCX33",
+      "cpu_cores": 8,
+      "ram_gb": 128,
+      "disk_gb": 360,
+      "price_monthly": 62.99,
+      "category": "dedicated_cpu"
+    }
+  ]
+}

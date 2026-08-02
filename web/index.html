@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hetzner Auction Dashboard</title>
+    <link rel="stylesheet" href="snapshot-diff.css">
     <style>
         * {
             margin: 0;
@@ -344,6 +345,22 @@
             margin-left: 10px;
         }
 
+        .cloud-comparison {
+            display: inline-block;
+            background: #e3f2e9;
+            color: #2b8a3e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .cloud-comparison.unavailable {
+            background: #fff3bf;
+            color: #856404;
+        }
+
         .staleness-indicator {
             background: #fff3bf;
             color: #856404;
@@ -481,6 +498,58 @@
     </div>
 
     <script>
+        // Hetzner Cloud pricing lookup table
+        let cloudPricingData = [];
+
+        // Load Cloud pricing data
+        async function loadCloudPricing() {
+            try {
+                const response = await fetch('hetzner-cloud-pricing.json');
+                const data = await response.json();
+                cloudPricingData = data.servers;
+                console.log('Cloud pricing loaded:', cloudPricingData.length, 'server types');
+            } catch (error) {
+                console.error('Failed to load Cloud pricing:', error);
+            }
+        }
+
+        // Find equivalent Cloud instance based on RAM (primary) and CPU cores (secondary)
+        function findEquivalentCloudInstance(ram_gb, cpu_cores) {
+            if (!cloudPricingData.length) return null;
+
+            // First, find servers with RAM >= auction listing RAM
+            let candidates = cloudPricingData.filter(server => server.ram_gb >= ram_gb);
+
+            if (candidates.length === 0) {
+                // If no server has enough RAM, find the largest available
+                candidates = cloudPricingData.slice().sort((a, b) => b.ram_gb - a.ram_gb);
+            } else {
+                // Sort by RAM (ascending) to find the closest match
+                candidates.sort((a, b) => a.ram_gb - b.ram_gb);
+            }
+
+            // From the closest RAM matches, prefer CPU cores match if available
+            const exactCpuMatch = candidates.filter(s => s.cpu_cores === cpu_cores);
+            if (exactCpuMatch.length > 0) {
+                return exactCpuMatch[0];
+            }
+
+            // Otherwise, prefer slightly more CPU cores rather than less
+            const moreCpu = candidates.filter(s => s.cpu_cores >= cpu_cores);
+            if (moreCpu.length > 0) {
+                return moreCpu.sort((a, b) => a.cpu_cores - b.cpu_cores)[0];
+            }
+
+            return candidates[0];
+        }
+
+        // Calculate percentage savings compared to Cloud
+        function calculateCloudSavings(auctionPrice, cloudPrice) {
+            if (!cloudPrice || cloudPrice <= 0) return null;
+            const savings = ((cloudPrice - auctionPrice) / cloudPrice) * 100;
+            return Math.max(0, savings).toFixed(0);
+        }
+
         // Starter configs data (in production, this would be loaded from starter-configs.json)
         const starterConfigs = {
             "presets": [
@@ -569,6 +638,7 @@
             {
                 id: 1,
                 cpu_model: "Ryzen 9 5950X",
+                cpu_cores: 16,
                 ram_gb: 128,
                 disks: [{ type: "nvme", size_tb: 2 }],
                 price_effective_monthly: 45.99,
@@ -584,6 +654,7 @@
             {
                 id: 2,
                 cpu_model: "Xeon E5-2680 v4",
+                cpu_cores: 14,
                 ram_gb: 64,
                 disks: [{ type: "hdd", size_tb: 4 }],
                 price_effective_monthly: 28.50,
@@ -599,6 +670,7 @@
             {
                 id: 3,
                 cpu_model: "Core i7-12700",
+                cpu_cores: 12,
                 ram_gb: 32,
                 disks: [{ type: "nvme", size_tb: 1 }],
                 price_effective_monthly: 22.75,
@@ -614,6 +686,7 @@
             {
                 id: 4,
                 cpu_model: "Ryzen 7 5800X",
+                cpu_cores: 8,
                 ram_gb: 64,
                 disks: [{ type: "nvme", size_tb: 1 }],
                 price_effective_monthly: 38.25,
@@ -629,6 +702,7 @@
             {
                 id: 5,
                 cpu_model: "Unknown CPU Model X",
+                cpu_cores: 8,
                 ram_gb: 32,
                 disks: [{ type: "ssd", size_tb: 1 }],
                 price_effective_monthly: 18.00,
@@ -842,10 +916,27 @@
                     return typeLabels[d.type] || d.type.toUpperCase();
                 }).join(', ');
 
+                // Find equivalent Cloud instance and calculate savings
+                const cloudEquivalent = findEquivalentCloudInstance(listing.ram_gb, listing.cpu_cores || 0);
+                const cloudSavings = cloudEquivalent
+                    ? calculateCloudSavings(listing.price_effective_monthly, cloudEquivalent.price_monthly)
+                    : null;
+
                 const listingElement = document.createElement('div');
                 listingElement.className = 'listing';
 
                 const unscoredBadge = listing.benchmark_matched ? '' : '<span class="unscored-badge">Unscored</span>';
+
+                // Cloud comparison badge
+                let cloudBadge = '';
+                if (cloudSavings !== null) {
+                    const cloudClass = parseFloat(cloudSavings) > 0 ? 'cloud-comparison' : 'cloud-comparison unavailable';
+                    const cloudText = parseFloat(cloudSavings) > 0
+                        ? `${cloudSavings}% cheaper than Hetzner Cloud ${cloudEquivalent.name}`
+                        : `Similar price to Hetzner Cloud ${cloudEquivalent.name}`;
+                    cloudBadge = `<span class="${cloudClass}">${cloudText}</span>`;
+                }
+
                 const benchmarkMultiClass = listing.price_per_benchmark_point_multi !== null ? 'good' : 'unscored';
                 const benchmarkSingleClass = listing.price_per_benchmark_point_single !== null ? 'good' : 'unscored';
 
@@ -856,6 +947,7 @@
                             <div class="listing-specs">
                                 ${listing.ram_gb}GB RAM • ${totalDiskSize}TB ${diskTypes} • ${getLocationLabel(listing.location)}
                             </div>
+                            ${cloudBadge}
                         </div>
                         <div class="listing-price">
                             <div class="price">€${listing.price_effective_monthly.toFixed(2)}</div>
@@ -979,13 +1071,56 @@
         }
 
         // Initialize
-        initStarterConfigs();
-        updateSortDescription();
-        filterAndSortListings();
-        updateStaleness();
+        async function init() {
+            await loadCloudPricing();
+            initStarterConfigs();
+            updateSortDescription();
+            filterAndSortListings();
+            updateStaleness();
+        }
+
+        init();
 
         // In production, update staleness every minute
         setInterval(updateStaleness, 60000);
+    </script>
+    <script src="snapshot-diff.js"></script>
+    <script>
+        // Initialize snapshot diff functionality when DOM is loaded
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Initialize the snapshot diff manager
+                await snapshotDiffManager.initialize();
+                console.log('Snapshot diff system ready');
+
+                // Process current mock listings to demonstrate the diff functionality
+                // In production, this would be called after loading real Parquet data
+                await snapshotDiffManager.processCurrentListings(mockListings);
+                console.log('Snapshot diff analysis complete');
+
+            } catch (error) {
+                console.error('Failed to initialize snapshot diff:', error);
+            }
+        });
+
+        // Update the staleness function to also refresh diff
+        const originalUpdateStaleness = updateStaleness;
+        updateStaleness = async function() {
+            originalUpdateStaleness();
+
+            // Every few minutes, also refresh the diff with current data
+            // In production, this would reload the latest Parquet data first
+            if (Math.random() < 0.1) { // 10% chance each staleness update
+                try {
+                    await snapshotDiffManager.processCurrentListings(mockListings);
+                    // Also refresh Cloud pricing comparison
+                    await loadCloudPricing();
+                    filterAndSortListings();
+                } catch (error) {
+                    console.error('Failed to refresh diff:', error);
+                }
+            }
+        };
     </script>
 </body>
 </html>
