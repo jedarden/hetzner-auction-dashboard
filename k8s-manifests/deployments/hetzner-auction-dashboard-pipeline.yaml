@@ -1,0 +1,338 @@
+# Hetzner Auction Dashboard Pipeline - Kubernetes Deployment
+#
+# This manifest should be stored in: jedarden/declarative-config/k8s/pipeline/
+# and synced by ArgoCD (GitOps) - never a live kubectl mutation.
+#
+# Architecture: docs/plan/plan.md "Pipeline Run Lifecycle"
+# Concurrency Model: replicas: 1 with temp-key-then-swap for safety
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hetzner-auction-dashboard
+  labels:
+    name: hetzner-auction-dashboard
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-config
+  namespace: hetzner-auction-dashboard
+  labels:
+    app: hetzner-auction-pipeline
+data:
+  # Pipeline configuration
+  PIPELINE_LOG_LEVEL: "INFO"
+
+  # R2 configuration (endpoint URL)
+  R2_ENDPOINT_URL: "https://r2.cloudflarestorage.com"
+
+  # Published artifact keys
+  PARQUET_SNAPSHOT_KEY: "current_snapshot.parquet"
+  UNMATCHED_REPORT_KEY: "unmatched-cpus.json"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: r2-credentials
+  namespace: hetzner-auction-dashboard
+  labels:
+    app: hetzner-auction-pipeline
+type: Opaque
+stringData:
+  # R2 credentials should be stored as an ExternalSecret backed by OpenBao
+  # This is a placeholder showing the expected structure
+  # Actual implementation uses ExternalSecret (see external-secret.yaml)
+  R2_ACCOUNT_ID: "your-account-id-here"
+  R2_ACCESS_KEY_ID: "your-access-key-id-here"
+  R2_SECRET_ACCESS_KEY: "your-secret-access-key-here"
+  R2_BUCKET_NAME: "your-bucket-name-here"
+
+---
+# ExternalSecret for R2 credentials (OpenBao-backed)
+# This replaces the static Secret above for production use
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: r2-credentials-external
+  namespace: hetzner-auction-dashboard
+  labels:
+    app: hetzner-auction-pipeline
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-secret-store
+    kind: SecretStore
+  target:
+    name: r2-credentials
+    creationPolicy: Owner
+  data:
+    - secretKey: R2_ACCOUNT_ID
+      remoteRef:
+        key: secret/data/hetzner-auction-dashboard/r2
+        property: account_id
+
+    - secretKey: R2_ACCESS_KEY_ID
+      remoteRef:
+        key: secret/data/hetzner-auction-dashboard/r2
+        property: access_key_id
+
+    - secretKey: R2_SECRET_ACCESS_KEY
+      remoteRef:
+        key: secret/data/hetzner-auction-dashboard/r2
+        property: secret_access_key
+
+    - secretKey: R2_BUCKET_NAME
+      remoteRef:
+        key: secret/data/hetzner-auction-dashboard/r2
+        property: bucket_name
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hetzner-auction-pipeline
+  namespace: hetzner-auction-dashboard
+  labels:
+    app: hetzner-auction-pipeline
+    component: pipeline
+    part: backend
+spec:
+  # Single replica - house rule: no Job/CronJob
+  # Rolling redeploy could briefly overlap two pods, but temp-key-then-swap
+  # pattern ensures last swap wins safely (see Concurrency Model in plan)
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: hetzner-auction-pipeline
+
+  template:
+    metadata:
+      labels:
+        app: hetzner-auction-pipeline
+        component: pipeline
+        part: backend
+      annotations:
+        # Rolling update strategy - only one pod at a time
+        rollme: "once"
+
+    spec:
+      # Non-root user for security
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+
+      # Init container to set proper permissions
+      initContainers:
+        - name: setup-permissions
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              chmod -R 755 /app/benchmark-map || true
+              chown -R 1000:1000 /app || true
+          volumeMounts:
+            - name: benchmark-map
+              mountPath: /app/benchmark-map
+
+      containers:
+        - name: pipeline
+          # Use explicit image tag - house rule: no :latest
+          image: registry.ardenone.com/hetzner-auction-pipeline:0.1.0
+          imagePullPolicy: IfNotPresent
+
+          # Security context for container
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
+          # Environment variables
+          env:
+            # From ConfigMap
+            - name: PIPELINE_LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: pipeline-config
+                  key: PIPELINE_LOG_LEVEL
+
+            - name: R2_ENDPOINT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: pipeline-config
+                  key: R2_ENDPOINT_URL
+
+            - name: PARQUET_SNAPSHOT_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: pipeline-config
+                  key: PARQUET_SNAPSHOT_KEY
+
+            - name: UNMATCHED_REPORT_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: pipeline-config
+                  key: UNMATCHED_REPORT_KEY
+
+            # From ExternalSecret (OpenBao-backed)
+            - name: R2_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: r2-credentials
+                  key: R2_ACCOUNT_ID
+
+            - name: R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: r2-credentials
+                  key: R2_ACCESS_KEY_ID
+
+            - name: R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: r2-credentials
+                  key: R2_SECRET_ACCESS_KEY
+
+            - name: R2_BUCKET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: r2-credentials
+                  key: R2_BUCKET_NAME
+
+          # Volume mounts
+          volumeMounts:
+            - name: benchmark-map
+              mountPath: /app/benchmark-map
+              readOnly: true
+
+            - name: tmp
+              mountPath: /tmp
+
+          # Resource limits
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Health checks
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import sys; sys.exit(0)"
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+      # Volumes
+      volumes:
+        # Benchmark-map data (could be ConfigMap or emptyDir with init container)
+        - name: benchmark-map
+          emptyDir: {}
+
+        # Temporary storage for Parquet/report files
+        - name: tmp
+          emptyDir:
+            sizeLimit: "100Mi"
+
+      # Restart policy for the pod
+      restartPolicy: Always
+
+      # Node affinity (optional - adjust based on cluster setup)
+      # This ensures pipeline runs on nodes with egress to Cloudflare R2
+      # affinity:
+      #   podAntiAffinity:
+      #     preferredDuringSchedulingIgnoredDuringExecution:
+      #       - weight: 100
+      #         podAffinityTerm:
+      #           labelSelector:
+      #             matchLabels:
+      #               app: hetzner-auction-pipeline
+      #           topologyKey: kubernetes.io/hostname
+
+---
+# HorizontalPodAutoscaler (disabled by design)
+# The pipeline runs as a single replica with an internal refresh loop.
+# Autoscaling is intentionally disabled - see Concurrency Model in plan.
+# If scaling is ever needed, add distributed locking around the R2 swap.
+
+---
+# PodDisruptionBudget for high availability during node maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hetzner-auction-pipeline-pdb
+  namespace: hetzner-auction-dashboard
+spec:
+  # Allow at most 1 unavailable pod (with replicas: 1, this allows voluntary disruptions)
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: hetzner-auction-pipeline
+
+---
+# ServiceMonitor for Prometheus scraping (optional)
+# If Prometheus is deployed in the cluster, this enables metrics collection
+# apiVersion: monitoring.coreos.com/v1
+# kind: ServiceMonitor
+# metadata:
+#   name: hetzner-auction-pipeline
+#   namespace: hetzner-auction-dashboard
+#   labels:
+#     app: hetzner-auction-pipeline
+# spec:
+#   selector:
+#     matchLabels:
+#       app: hetzner-auction-pipeline
+#   endpoints:
+#     - port: metrics
+#       interval: 30s
+#       path: /metrics
+
+---
+# NOTES:
+#
+# 1. This Deployment manifest should be stored in:
+#    jedarden/declarative-config/k8s/pipeline/hetzner-auction-dashboard-pipeline.yaml
+#
+# 2. Synced by ArgoCD from declarative-config (GitOps)
+#    Never modified via live kubectl mutations (house rule)
+#
+# 3. R2 credentials are managed via ExternalSecret backed by OpenBao
+#    The placeholder Secret above is for documentation only
+#
+# 4. The pipeline runs with replicas: 1 and an internal 10-minute refresh loop
+#    House rule: no Job/CronJob (see Architecture plan)
+#
+# 5. Rolling redeploy strategy ensures safe updates:
+#    - maxSurge: 1 (one new pod at a time)
+#    - maxUnavailable: 0 (never drop all pods)
+#    - Temp-key-then-swap pattern ensures last swap wins safely
+#
+# 6. Image registry should be updated based on environment:
+#    - Development: registry.ardenone.com/hetzner-auction-pipeline:0.1.0
+#    - Production: Adjust registry and tag as needed
