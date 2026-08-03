@@ -425,6 +425,31 @@
             border-left: 4px solid #ffc107;
         }
 
+        .staleness-indicator #last-updated.fresh {
+            color: #2f9e44;
+            font-weight: 600;
+        }
+
+        .staleness-indicator #last-updated.moderate {
+            color: #fd7e14;
+        }
+
+        .staleness-indicator #last-updated.stale {
+            color: #f76707;
+            font-weight: 600;
+        }
+
+        .staleness-indicator #last-updated.very-stale {
+            color: #fa5252;
+            font-weight: 700;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
         /* Error State Components */
         .error-state {
             background: #f8d7da;
@@ -708,6 +733,9 @@
             <div class="staleness-indicator" id="staleness-indicator">
                 Last updated: <span id="last-updated">Loading...</span>
             </div>
+            <div class="staleness-indicator" id="refresh-indicator">
+                🔄 Auto-refresh: <span id="next-refresh">Calculating...</span>
+            </div>
             <div class="results-info">
                 Showing <span id="results-count">0</span> listings • Sorted by: <span id="current-sort">Value (multi-thread)</span>
             </div>
@@ -721,12 +749,19 @@
         // Hetzner Cloud pricing lookup table
         let cloudPricingData = [];
 
+        // Data staleness tracking
+        let dataFetchedAt = null; // Will store the actual fetched_at timestamp from Parquet data
+
         // Error state management
         let currentErrorState = null;
         let isLoadingData = false;
         let duckDBLoadFailed = false;
         let parquetFetchFailed = false;
         let usingFallbackData = false;
+
+        // Refresh loop tracking
+        const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+        let lastRefreshTime = null;
 
         // Load Cloud pricing data
         async function loadCloudPricing() {
@@ -1592,9 +1627,73 @@
 
         // Update staleness indicator
         function updateStaleness() {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-            document.getElementById('last-updated').textContent = timeString;
+            const stalenessEl = document.getElementById('last-updated');
+
+            if (dataFetchedAt) {
+                // Calculate how old the data is
+                const now = new Date();
+                const fetchedDate = new Date(dataFetchedAt);
+                const ageMs = now - fetchedDate;
+                const ageMinutes = Math.floor(ageMs / 60000);
+                const ageHours = Math.floor(ageMinutes / 60);
+
+                // Format the timestamp
+                const timeString = fetchedDate.toLocaleString();
+
+                // Create staleness message with visual indicator
+                let stalenessMessage = timeString;
+                let stalenessClass = '';
+
+                if (ageMinutes < 15) {
+                    stalenessMessage += ' (✓ Fresh)';
+                    stalenessClass = 'fresh';
+                } else if (ageMinutes < 60) {
+                    stalenessMessage += ` (${ageMinutes}m old)`;
+                    stalenessClass = 'moderate';
+                } else if (ageHours < 24) {
+                    stalenessMessage += ` (${ageHours}h old)`;
+                    stalenessClass = 'stale';
+                } else {
+                    stalenessMessage += ` (${Math.floor(ageHours / 24)}d old)`;
+                    stalenessClass = 'very-stale';
+                }
+
+                stalenessEl.textContent = stalenessMessage;
+                stalenessEl.className = stalenessClass;
+            } else {
+                // No data timestamp available
+                stalenessEl.textContent = 'Unknown timestamp';
+                stalenessEl.className = '';
+            }
+
+            // Update refresh countdown
+            updateRefreshCountdown();
+        }
+
+        // Update the refresh countdown indicator
+        function updateRefreshCountdown() {
+            const refreshEl = document.getElementById('next-refresh');
+
+            if (lastRefreshTime) {
+                const now = new Date();
+                const nextRefresh = new Date(lastRefreshTime.getTime() + REFRESH_INTERVAL_MS);
+                const timeUntilRefresh = nextRefresh - now;
+
+                if (timeUntilRefresh > 0) {
+                    const minutes = Math.floor(timeUntilRefresh / 60000);
+                    const seconds = Math.floor((timeUntilRefresh % 60000) / 1000);
+
+                    if (minutes > 0) {
+                        refreshEl.textContent = `${minutes}m ${seconds}s`;
+                    } else {
+                        refreshEl.textContent = `${seconds}s`;
+                    }
+                } else {
+                    refreshEl.textContent = 'Refreshing...';
+                }
+            } else {
+                refreshEl.textContent = 'Initializing...';
+            }
         }
 
         // Event listeners for manual filter changes
@@ -2059,6 +2158,16 @@
 
                 console.log(`Loaded ${count} listings from Parquet`);
 
+                // Extract fetched_at timestamp to display data staleness
+                const fetchedAtResult = await db.query('SELECT MAX(fetched_at) as latest_fetched_at FROM listings');
+                if (fetchedAtResult.toArray().length > 0) {
+                    const latestFetched = fetchedAtResult.toArray()[0].latest_fetched_at;
+                    if (latestFetched) {
+                        dataFetchedAt = new Date(latestFetched);
+                        console.log(`Data fetched at: ${dataFetchedAt.toISOString()}`);
+                    }
+                }
+
                 // Step 6: Convert DuckDB results to our listing format
                 const listingsResult = await db.query('SELECT * FROM listings LIMIT 1000'); // Limit for performance
                 realListings = convertDuckDBResultToListings(listingsResult);
@@ -2294,9 +2403,107 @@
             }
 
             updateStaleness();
+            updateRefreshCountdown();
         }
 
+        // Pipeline: fetch -> match -> compute -> write -> publish
+        // Wrapped in a refresh loop that runs every 10 minutes
+        let refreshInterval = null;
+        let countdownInterval = null;
+        let isRefreshing = false;
+
+        async function runPipeline() {
+            if (isRefreshing) {
+                console.log('Pipeline refresh already in progress, skipping...');
+                return;
+            }
+
+            isRefreshing = true;
+            const refreshStart = new Date();
+            console.log('Starting pipeline refresh at:', refreshStart.toISOString());
+
+            try {
+                // Step 1: Fetch - Load auction data (with fallback to mock data)
+                const USE_REAL_DATA = false; // Change to true when real Parquet data is available
+                if (USE_REAL_DATA) {
+                    try {
+                        await loadRealDataWithFallback();
+                    } catch (error) {
+                        console.error('Failed to load real data, using fallback:', error);
+                        const fallbackData = getFallbackMockData();
+                        mockListings.length = 0;
+                        mockListings.push(...fallbackData);
+                    }
+                }
+
+                // Step 2 & 3: Match & Compute
+                // Data is already processed in loadRealDataWithFallback or uses mock data
+                // The filterAndSortListings function handles matching and computing metrics
+
+                // Step 4: Write - Update in-memory listings data
+                // Data is already written to mockListings array
+
+                // Step 5: Publish - Display the results with current filters
+                // Re-apply current filters to refresh the display with new data
+                filterAndSortListings();
+
+                // Update staleness indicator
+                updateStaleness();
+
+                console.log('Pipeline refresh complete at:', new Date().toISOString());
+
+            } catch (error) {
+                console.error('Pipeline refresh failed:', error);
+                // Show error but don't break the refresh loop
+                showErrorState('unknown-error', { error: error.message });
+            } finally {
+                isRefreshing = false;
+                // Record the time of this refresh for countdown calculation
+                lastRefreshTime = new Date();
+            }
+        }
+
+        // Start the 10-minute refresh loop
+        function startRefreshLoop() {
+            if (refreshInterval !== null) {
+                console.log('Refresh loop already running, clearing existing interval');
+                clearInterval(refreshInterval);
+            }
+
+            if (countdownInterval !== null) {
+                clearInterval(countdownInterval);
+            }
+
+            console.log(`Starting ${REFRESH_INTERVAL_MS / 60000}-minute refresh loop`);
+
+            // Initialize last refresh time to now
+            lastRefreshTime = new Date();
+
+            // Start the refresh interval
+            refreshInterval = setInterval(async () => {
+                console.log('Scheduled refresh triggered');
+                await runPipeline();
+            }, REFRESH_INTERVAL_MS);
+
+            // Start the countdown update interval (every second)
+            countdownInterval = setInterval(() => {
+                updateRefreshCountdown();
+            }, 1000);
+
+            console.log('Refresh loop started - next refresh at:', new Date(Date.now() + REFRESH_INTERVAL_MS).toISOString());
+        }
+
+        // Manual refresh function (exposed for testing/debugging)
+        async function manualRefresh() {
+            console.log('Manual refresh triggered');
+            await runPipeline();
+        }
+
+        // Initialize
         init();
+
+        // Start the 10-minute refresh loop after initial load
+        startRefreshLoop();
 
         // Handle browser back/forward buttons
         window.addEventListener('popstate', (event) => {
@@ -2308,6 +2515,11 @@
 
         // In production, update staleness every minute
         setInterval(updateStaleness, 60000);
+
+        // Expose manual refresh for debugging
+        window.manualRefresh = manualRefresh;
+        window.runPipeline = runPipeline;
+        window.startRefreshLoop = startRefreshLoop;
     </script>
     <script src="snapshot-diff.js"></script>
     <script>
