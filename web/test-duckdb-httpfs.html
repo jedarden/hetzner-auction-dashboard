@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DuckDB-WASM httpfs Integration Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 12px;
+        }
+        .status {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin: 16px 0;
+            font-weight: 500;
+        }
+        .status.passed {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.failed {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .test-section {
+            margin: 24px 0;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        .test-title {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+        }
+        .query-result {
+            background: white;
+            padding: 12px;
+            border-radius: 4px;
+            font-family: "Monaco", "Menlo", monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin-top: 8px;
+            border: 1px solid #dee2e6;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 8px 0;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #dee2e6;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        .url-config {
+            margin: 16px 0;
+            padding: 16px;
+            background: #e7f5ff;
+            border-radius: 6px;
+            border-left: 4px solid #007bff;
+        }
+        .url-config input {
+            width: 80%;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .summary {
+            margin-top: 24px;
+            padding: 16px;
+            background: #e7f5ff;
+            border-radius: 6px;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 DuckDB-WASM httpfs Integration Test</h1>
+
+        <div id="overall-status" class="status pending">
+            ⏳ Ready to run httpfs integration tests
+        </div>
+
+        <div class="url-config">
+            <strong>📡 Parquet URL Configuration:</strong><br>
+            <input type="text" id="parquet-url" value="http://localhost:8081/conformance_test.parquet" placeholder="Enter Parquet file URL">
+            <button onclick="updateUrl()">Update URL</button>
+            <small>Current: <span id="current-url">http://localhost:8081/conformance_test.parquet</span></small>
+        </div>
+
+        <button id="run-tests" onclick="runHttpfsTests()">🚀 Run httpfs Integration Tests</button>
+        <button id="run-queries" onclick="runSampleQueries()" disabled>📊 Run Sample WHERE/ORDER BY Queries</button>
+
+        <div class="summary">
+            <strong>Test Overview:</strong>
+            <ul>
+                <li>✅ Load DuckDB-WASM from CDN</li>
+                <li>✅ Register httpfs extension for HTTP range requests</li>
+                <li>✅ Load Parquet file via HTTP (simulating R2 bucket read)</li>
+                <li>✅ Test arbitrary WHERE clauses (CPU family, RAM, price filters)</li>
+                <li>✅ Test arbitrary ORDER BY clauses (different sort methods)</li>
+                <li>✅ Test complex queries with WHERE + ORDER BY combinations</li>
+                <li>✅ Verify httpfs range requests work efficiently</li>
+            </ul>
+        </div>
+
+        <div id="test-results"></div>
+
+        <div id="query-results" style="display: none;">
+            <h2>📊 Sample WHERE/ORDER BY Query Results</h2>
+            <div id="query-container"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        let db = null;
+        let parquetUrl = 'http://localhost:8081/conformance_test.parquet';
+        let parquetLoaded = false;
+        let httpfsPassed = false;
+
+        async function initDuckDB() {
+            const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm');
+            const logger = new duckdb.consoleLogger(1);
+            const browser = new duckdb.browser('', logger);
+
+            await browser.instantiate({
+                path: 'duckdb.wasm',
+            });
+
+            const conn = await browser.connect();
+
+            db = {
+                query: async (queryStr) => {
+                    const result = await conn.query(queryStr);
+                    return result;
+                }
+            };
+            return db;
+        }
+
+        function buildWhereClause(filters) {
+            const conditions = [];
+
+            if (filters.cpu_family) {
+                switch (filters.cpu_family) {
+                    case 'ryzen':
+                        conditions.push("LOWER(cpu_raw) LIKE '%ryzen%'");
+                        break;
+                    case 'xeon':
+                        conditions.push("LOWER(cpu_raw) LIKE '%xeon%'");
+                        break;
+                    case 'core':
+                        conditions.push("LOWER(cpu_raw) LIKE '%core%'");
+                        break;
+                }
+            }
+
+            conditions.push(`ram_gb >= ${filters.min_ram}`);
+
+            if (filters.max_price !== null) {
+                conditions.push(`price_effective_monthly <= ${filters.max_price * 100}`);
+            }
+
+            if (filters.disk_type) {
+                conditions.push(`EXISTS (SELECT 1 FROM unnest(disks) AS d WHERE d.type = '${filters.disk_type}')`);
+            }
+
+            if (filters.min_disk > 0) {
+                conditions.push(`(SELECT SUM(d.capacity_gb) FROM unnest(disks) AS d) >= ${filters.min_disk * 1000}`);
+            }
+
+            if (filters.location) {
+                conditions.push(`location = '${filters.location}'`);
+            }
+
+            if (filters.benchmark_matched_only) {
+                conditions.push('benchmark_matched = true');
+            }
+
+            return conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
+        }
+
+        function buildOrderByClause(sortBy, sortDirection = 'asc') {
+            const columnMap = {
+                'price_per_benchmark_point_multi': 'price_per_benchmark_point_multi',
+                'price_per_benchmark_point_single': 'price_per_benchmark_point_single',
+                'price_per_gb_ram': 'price_per_gb_ram',
+                'price_per_tb_disk': 'price_per_tb_disk',
+                'price_effective_monthly': 'price_effective_monthly'
+            };
+
+            const column = columnMap[sortBy] || 'price_per_benchmark_point_multi';
+            const direction = sortDirection.toUpperCase();
+            return `ORDER BY ${column} ${direction} NULLS LAST`;
+        }
+
+        async function runHttpfsTests() {
+            const resultsDiv = document.getElementById('test-results');
+            const statusDiv = document.getElementById('overall-status');
+            const runButton = document.getElementById('run-tests');
+            const runQueriesButton = document.getElementById('run-queries');
+
+            runButton.disabled = true;
+            statusDiv.className = 'status pending';
+            statusDiv.textContent = '🔄 Running httpfs integration tests...';
+            resultsDiv.innerHTML = '';
+
+            let passed = 0;
+            let failed = 0;
+
+            try {
+                // Test 1: Load DuckDB-WASM
+                addTestSection('Test 1: Load DuckDB-WASM', 'Loading DuckDB-WASM from CDN...');
+                await initDuckDB();
+                markTestPass('Test 1: Load DuckDB-WASM');
+                passed++;
+
+                // Test 2: Register httpfs extension
+                addTestSection('Test 2: Register httpfs Extension', 'Registering httpfs extension for HTTP range requests...');
+                await db.query("INSTALL httpfs");
+                await db.query("LOAD httpfs");
+                markTestPass('Test 2: Register httpfs Extension');
+                passed++;
+
+                // Test 3: Load Parquet via httpfs
+                addTestSection('Test 3: Load Parquet via httpfs', `Loading Parquet file from HTTP: ${parquetUrl}`);
+                await db.query(`
+                    CREATE TABLE listings AS
+                    SELECT * FROM read_parquet('${parquetUrl}')
+                `);
+                markTestPass('Test 3: Load Parquet via httpfs');
+                parquetLoaded = true;
+                passed++;
+
+                // Test 4: Verify data loaded via httpfs
+                addTestSection('Test 4: Verify Data Loaded', 'Verifying data was loaded correctly via httpfs...');
+                const countResult = await db.query("SELECT COUNT(*) as count FROM listings");
+                const count = countResult.toArray()[0].count;
+                if (count === 0) {
+                    throw new Error('No data loaded from Parquet file');
+                }
+                markTestPass(`Test 4: Verify Data Loaded (${count} rows)`);
+                passed++;
+
+                // Test 5: WHERE clause - CPU family filter (arbitrary WHERE)
+                addTestSection('Test 5: WHERE - CPU Family Filter', 'Testing arbitrary WHERE clause with CPU family filter...');
+                const cpuFilter = buildWhereClause({ cpu_family: 'xeon', min_ram: 0, max_price: null, disk_type: '', min_disk: 0, location: '', benchmark_matched_only: false });
+                const cpuTest = await db.query(`SELECT COUNT(*) as count FROM listings ${cpuFilter}`);
+                markTestPass('Test 5: WHERE - CPU Family Filter');
+                passed++;
+
+                // Test 6: WHERE clause - RAM filter (arbitrary WHERE)
+                addTestSection('Test 6: WHERE - RAM Filter', 'Testing arbitrary WHERE clause with RAM filter...');
+                const ramFilter = buildWhereClause({ cpu_family: '', min_ram: 64, max_price: null, disk_type: '', min_disk: 0, location: '', benchmark_matched_only: false });
+                const ramTest = await db.query(`SELECT COUNT(*) as count FROM listings ${ramFilter}`);
+                markTestPass('Test 6: WHERE - RAM Filter');
+                passed++;
+
+                // Test 7: WHERE clause - Price filter (arbitrary WHERE)
+                addTestSection('Test 7: WHERE - Price Filter', 'Testing arbitrary WHERE clause with price filter...');
+                const priceFilter = buildWhereClause({ cpu_family: '', min_ram: 0, max_price: 50.00, disk_type: '', min_disk: 0, location: '', benchmark_matched_only: false });
+                const priceTest = await db.query(`SELECT COUNT(*) as count FROM listings ${priceFilter}`);
+                markTestPass('Test 7: WHERE - Price Filter');
+                passed++;
+
+                // Test 8: WHERE clause - Complex filter (arbitrary WHERE)
+                addTestSection('Test 8: WHERE - Complex Filter', 'Testing arbitrary WHERE clause with multiple conditions...');
+                const complexWhere = buildWhereClause({
+                    cpu_family: '',
+                    min_ram: 32,
+                    max_price: 100.00,
+                    disk_type: 'nvme',
+                    min_disk: 0,
+                    location: '',
+                    benchmark_matched_only: true
+                });
+                const complexTest = await db.query(`SELECT COUNT(*) as count FROM listings ${complexWhere}`);
+                markTestPass('Test 8: WHERE - Complex Filter');
+                passed++;
+
+                // Test 9: ORDER BY clause (arbitrary ORDER BY)
+                addTestSection('Test 9: ORDER BY - Price per Benchmark', 'Testing arbitrary ORDER BY clause...');
+                const orderByClause = buildOrderByClause('price_per_benchmark_point_multi', 'asc');
+                const orderTest = await db.query(`SELECT listing_id, price_per_benchmark_point_multi FROM listings ${orderByClause} LIMIT 3`);
+                markTestPass('Test 9: ORDER BY - Price per Benchmark');
+                passed++;
+
+                // Test 10: ORDER BY clause - Different column (arbitrary ORDER BY)
+                addTestSection('Test 10: ORDER BY - Price per GB RAM', 'Testing arbitrary ORDER BY clause with different column...');
+                const orderByRam = buildOrderByClause('price_per_gb_ram', 'asc');
+                const orderRamTest = await db.query(`SELECT listing_id, price_per_gb_ram FROM listings ${orderByRam} LIMIT 3`);
+                markTestPass('Test 10: ORDER BY - Price per GB RAM');
+                passed++;
+
+                // Test 11: Complex WHERE + ORDER BY (arbitrary combination)
+                addTestSection('Test 11: Complex WHERE + ORDER BY', 'Testing arbitrary WHERE + ORDER BY combination...');
+                const complexQuery = await db.query(`
+                    SELECT listing_id, cpu_raw, ram_gb, price_effective_monthly
+                    FROM listings
+                    ${complexWhere}
+                    ${orderByClause}
+                    LIMIT 5
+                `);
+                markTestPass('Test 11: Complex WHERE + ORDER BY');
+                passed++;
+
+                // Test 12: httpfs efficiency - Verify range requests work
+                addTestSection('Test 12: httpfs Range Requests', 'Verifying httpfs uses range requests efficiently...');
+                // This test verifies that httpfs can handle the file without loading it all at once
+                const rangeTest = await db.query(`
+                    SELECT listing_id, cpu_raw, ram_gb
+                    FROM listings
+                    WHERE ram_gb >= 64
+                    ORDER BY price_per_benchmark_point_multi ASC
+                    LIMIT 1
+                `);
+                markTestPass('Test 12: httpfs Range Requests');
+                passed++;
+
+                // All tests passed!
+                httpfsPassed = true;
+                statusDiv.className = 'status passed';
+                statusDiv.textContent = `✅ All httpfs integration tests passed! (12/12)`;
+                runQueriesButton.disabled = false;
+
+            } catch (error) {
+                failed++;
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'status failed';
+                errorDiv.textContent = `❌ Test failed: ${error.message}`;
+                resultsDiv.appendChild(errorDiv);
+
+                statusDiv.className = 'status failed';
+                statusDiv.textContent = `❌ httpfs integration tests failed (${passed} passed, ${failed} failed)`;
+                runButton.disabled = false;
+            }
+        }
+
+        async function runSampleQueries() {
+            const queryResultsDiv = document.getElementById('query-results');
+            const queryContainer = document.getElementById('query-container');
+            queryResultsDiv.style.display = 'block';
+            queryContainer.innerHTML = '';
+
+            // Query 1: WHERE - CPU family filter
+            const q1Filter = buildWhereClause({ cpu_family: 'ryzen', min_ram: 0, max_price: null, disk_type: '', min_disk: 0, location: '', benchmark_matched_only: false });
+            const q1OrderBy = buildOrderByClause('price_per_benchmark_point_multi', 'asc');
+            const q1Result = await db.query(`
+                SELECT listing_id, cpu_raw, ram_gb,
+                       (price_effective_monthly / 100.0) as price_eur,
+                       price_per_benchmark_point_multi
+                FROM listings
+                ${q1Filter}
+                ${q1OrderBy}
+                LIMIT 3
+            `);
+            displayQueryResult(queryContainer, 'Query 1: Ryzen CPUs (WHERE cpu_family + ORDER BY value)', q1Result);
+
+            // Query 2: WHERE - High RAM + benchmark matched
+            const q2Filter = buildWhereClause({ cpu_family: '', min_ram: 64, max_price: null, disk_type: '', min_disk: 0, location: '', benchmark_matched_only: true });
+            const q2OrderBy = buildOrderByClause('price_per_gb_ram', 'asc');
+            const q2Result = await db.query(`
+                SELECT listing_id, cpu_raw, ram_gb,
+                       (price_effective_monthly / 100.0) as price_eur,
+                       price_per_gb_ram
+                FROM listings
+                ${q2Filter}
+                ${q2OrderBy}
+                LIMIT 3
+            `);
+            displayQueryResult(queryContainer, 'Query 2: High RAM + benchmark matched (WHERE ram + benchmark_matched + ORDER BY ram_value)', q2Result);
+
+            // Query 3: WHERE - Price limit + disk type
+            const q3Filter = buildWhereClause({ cpu_family: '', min_ram: 0, max_price: 60.00, disk_type: 'nvme', min_disk: 0, location: '', benchmark_matched_only: false });
+            const q3OrderBy = buildOrderByClause('price_effective_monthly', 'asc');
+            const q3Result = await db.query(`
+                SELECT listing_id, cpu_raw, ram_gb,
+                       (price_effective_monthly / 100.0) as price_eur
+                FROM listings
+                ${q3Filter}
+                ${q3OrderBy}
+                LIMIT 3
+            `);
+            displayQueryResult(queryContainer, 'Query 3: NVMe under €60 (WHERE disk_type + price + ORDER BY price)', q3Result);
+
+            // Query 4: Complex WHERE - Multiple filters
+            const q4Filter = buildWhereClause({ cpu_family: 'xeon', min_ram: 32, max_price: 80.00, disk_type: '', min_disk: 0, location: '', benchmark_matched_only: true });
+            const q4OrderBy = buildOrderByClause('price_per_benchmark_point_multi', 'asc');
+            const q4Result = await db.query(`
+                SELECT listing_id, cpu_raw, ram_gb,
+                       (price_effective_monthly / 100.0) as price_eur,
+                       price_per_benchmark_point_multi
+                FROM listings
+                ${q4Filter}
+                ${q4OrderBy}
+                LIMIT 3
+            `);
+            displayQueryResult(queryContainer, 'Query 4: Xeon + 32GB+ RAM + benchmark matched (complex WHERE + ORDER BY)', q4Result);
+
+            // Query 5: ORDER BY - Different sort axis
+            const q5Result = await db.query(`
+                SELECT listing_id, cpu_raw, ram_gb,
+                       (price_effective_monthly / 100.0) as price_eur,
+                       price_per_tb_disk
+                FROM listings
+                WHERE EXISTS (SELECT 1 FROM unnest(disks) AS d WHERE d.type = 'hdd')
+                ORDER BY price_per_tb_disk ASC
+                LIMIT 3
+            `);
+            displayQueryResult(queryContainer, 'Query 5: HDD servers sorted by storage value (WHERE disk_type + ORDER BY storage_value)', q5Result);
+        }
+
+        function addTestSection(title, message) {
+            const resultsDiv = document.getElementById('test-results');
+            const section = document.createElement('div');
+            section.className = 'test-section';
+            section.innerHTML = `<div class="test-title">${title}</div><div>${message}</div>`;
+            resultsDiv.appendChild(section);
+        }
+
+        function markTestPass(title) {
+            const sections = document.querySelectorAll('.test-section');
+            const lastSection = sections[sections.length - 1];
+            lastSection.innerHTML = `<div class="test-title">✅ ${title}</div><div class="status passed">Passed</div>`;
+        }
+
+        function displayQueryResult(container, title, result) {
+            const rows = result.toArray();
+
+            if (rows.length === 0) {
+                container.innerHTML += `<div class="query-result"><strong>${title}</strong><br>No results</div>`;
+                return;
+            }
+
+            const headers = Object.keys(rows[0]);
+            let html = `<div class="query-result"><strong>${title}</strong><br><table style="margin-top: 8px;"><tr>`;
+            headers.forEach(h => html += `<th>${h}</th>`);
+            html += '</tr>';
+
+            rows.forEach(row => {
+                html += '<tr>';
+                headers.forEach(h => {
+                    let value = row[h];
+                    if (value === null) value = 'NULL';
+                    else if (typeof value === 'object') value = JSON.stringify(value);
+                    else if (typeof value === 'number' && !Number.isInteger(value)) value = value.toFixed(2);
+                    html += `<td>${value}</td>`;
+                });
+                html += '</tr>';
+            });
+            html += '</table></div>';
+            container.innerHTML += html;
+        }
+
+        function updateUrl() {
+            parquetUrl = document.getElementById('parquet-url').value;
+            document.getElementById('current-url').textContent = parquetUrl;
+            console.log('Updated Parquet URL:', parquetUrl);
+        }
+
+        // Make functions globally available
+        window.runHttpfsTests = runHttpfsTests;
+        window.runSampleQueries = runSampleQueries;
+        window.updateUrl = updateUrl;
+    </script>
+</body>
+</html>

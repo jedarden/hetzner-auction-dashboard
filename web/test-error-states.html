@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error States Test - Hetzner Auction Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 12px;
+        }
+        .button-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .description {
+            background: #e7f5ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border-left: 4px solid #007bff;
+        }
+        /* Copy the error state styles from index.html */
+        .error-state {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .error-state-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #721c24;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .error-state-icon {
+            font-size: 1.5rem;
+        }
+        .error-state-message {
+            color: #721c24;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        .error-state-details {
+            background: #fff;
+            border: 1px solid #f5c6cb;
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 0.9rem;
+        }
+        .error-state-details h4 {
+            color: #721c24;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+        .error-state-details ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #721c24;
+        }
+        .error-state-details li {
+            margin-bottom: 8px;
+        }
+        .error-state-details code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85rem;
+            color: #c7254e;
+        }
+        .error-retry-button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+        .error-retry-button:hover {
+            background: #c82333;
+        }
+        .loading-state {
+            background: #e7f5ff;
+            border-left: 4px solid #007bff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-text {
+            color: #004085;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        .fallback-mode {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .fallback-mode-title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .fallback-mode-text {
+            color: #856404;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        #display-area {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Error States Test Page</h1>
+
+        <div class="description">
+            <strong>Overview:</strong> This page tests all error state components for the Hetzner Auction Dashboard.
+            Each button simulates a different failure scenario to verify that graceful degradation works correctly.
+        </div>
+
+        <h2>Test Error States</h2>
+        <div class="button-group">
+            <button onclick="testError('duckdb-load-failed')">DuckDB Load Failed</button>
+            <button onclick="testError('parquet-fetch-failed')">Parquet Fetch Failed</button>
+            <button onclick="testError('both-failed')">Both Failed</button>
+            <button onclick="testError('cors-blocked')">CORS Blocked</button>
+            <button onclick="testError('memory-limit')">Memory Limit</button>
+            <button onclick="testError('timeout')">Timeout</button>
+            <button onclick="testError('unknown-error')">Unknown Error</button>
+            <button onclick="testLoading()">Loading State</button>
+            <button onclick="testFallback()">Fallback Mode</button>
+            <button onclick="clearDisplay()">Clear Display</button>
+        </div>
+
+        <h2>Test Different Error Details</h2>
+        <div class="button-group">
+            <button onclick="testError('cors-blocked', {url: 'https://example.com/data.parquet'})">CORS with URL</button>
+            <button onclick="testError('parquet-fetch-failed', {url: 'https://r2.example.com/auctions.parquet', httpStatus: 403})">Parquet 403</button>
+            <button onclick="testError('timeout', {error: 'Request timed out after 30000ms'})">Timeout with Details</button>
+        </div>
+
+        <div id="display-area"></div>
+    </div>
+
+    <script>
+        const displayArea = document.getElementById('display-area');
+
+        function showErrorState(errorType, details = {}) {
+            const errorStates = {
+                'duckdb-load-failed': {
+                    title: '⚠️ Database Loading Failed',
+                    message: 'Unable to load the in-browser database (DuckDB-WASM). This may be due to network restrictions or browser compatibility.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li><strong>Network blocked:</strong> Your browser or network may be blocking access to DuckDB-WASM from CDN. Check if content blockers or corporate firewalls are preventing WASM file downloads.</li>
+                            <li><strong>Browser compatibility:</strong> Your browser may not support WebAssembly. Try using a modern browser (Chrome 90+, Firefox 88+, Safari 14.1+).</li>
+                            <li><strong>CDN unavailable:</strong> The DuckDB-WASM CDN service may be temporarily unavailable. Try refreshing the page.</li>
+                            <li><strong>Memory limit:</strong> DuckDB-WASM may exceed your browser's memory allocation.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Error: <code>${details.error || 'Unknown error loading DuckDB-WASM'}</code></li>
+                            <li>WASM URL: <code>${details.wasmUrl || 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm'}</code></li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading Database'
+                },
+                'parquet-fetch-failed': {
+                    title: '📄 Data Loading Failed',
+                    message: 'Unable to load the auction data from Parquet files. The data source may be unavailable or inaccessible.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li><strong>Network unavailable:</strong> Cannot reach the Parquet data source. Check your internet connection.</li>
+                            <li><strong>CORS restrictions:</strong> Cross-Origin Resource Sharing may be blocking the request. The data server may need to allow access from this domain.</li>
+                            <li><strong>Data source offline:</strong> The Parquet file hosting service (R2 bucket, CDN) may be temporarily unavailable.</li>
+                            <li><strong>Invalid URL:</strong> The Parquet file URL may be incorrect or the file may have been moved.</li>
+                            <li><strong>File format error:</strong> The Parquet file may be corrupted or in an incompatible format.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Error: <code>${details.error || 'Failed to fetch Parquet data'}</code></li>
+                            <li>Attempted URL: <code>${details.url || 'Parquet data source'}</code></li>
+                            <li>HTTP Status: <code>${details.httpStatus || 'Unknown'}</code></li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading Data'
+                },
+                'both-failed': {
+                    title: '❌ System Initialization Failed',
+                    message: 'Both the database engine and data loading failed. The dashboard cannot function without these components.',
+                    details: `
+                        <h4>Multiple Failures Detected:</h4>
+                        <ul>
+                            <li><strong>Database engine:</strong> Could not load DuckDB-WASM</li>
+                            <li><strong>Data source:</strong> Could not load Parquet auction data</li>
+                        </ul>
+                        <h4>This may indicate:</h4>
+                        <ul>
+                            <li>Severe network restrictions or firewall blocking external resources</li>
+                            <li>Browser compatibility issues with WebAssembly</li>
+                            <li>Complete service outage of data infrastructure</li>
+                            <li>Corrupted browser cache or extensions interfering with resource loading</li>
+                        </ul>
+                        <h4>Troubleshooting Steps:</h4>
+                        <ul>
+                            <li>Try a different browser (Chrome, Firefox, Safari)</li>
+                            <li>Disable browser extensions that might block scripts or network requests</li>
+                            <li>Check if you can access other websites</li>
+                            <li>Try incognito/private browsing mode</li>
+                            <li>Clear browser cache and reload</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Full Initialization'
+                },
+                'cors-blocked': {
+                    title: '🔒 Access Blocked by CORS Policy',
+                    message: 'Your browser is blocking access to the auction data due to Cross-Origin Resource Sharing restrictions.',
+                    details: `
+                        <h4>What is CORS?</h4>
+                        <ul>
+                            <li>CORS is a security feature that prevents websites from accessing data on other domains without permission.</li>
+                            <li>The data server needs to explicitly allow this domain to access the Parquet files.</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>For developers:</strong> Configure the data server to send appropriate CORS headers: <code>Access-Control-Allow-Origin: *</code> or specific domains.</li>
+                            <li><strong>For users:</strong> This error typically requires server-side configuration changes. Contact the service provider.</li>
+                            <li><strong>Workaround:</strong> Some browser extensions can bypass CORS for testing, but this is not recommended for security.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Blocked resource: <code>${details.url || 'Parquet data file'}</code></li>
+                            <li>Request origin: <code>${window.location.origin}</code></li>
+                        </ul>
+                    `,
+                    retryable: false
+                },
+                'memory-limit': {
+                    title: '💾 Memory Limit Exceeded',
+                    message: 'The dashboard requires more browser memory than is currently available to process the auction data.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li>Browser tab memory limit reached (typically 1-4GB depending on browser)</li>
+                            <li>Other tabs consuming significant memory</li>
+                            <li>Device has insufficient available RAM</li>
+                            <li>Parquet file is very large and requires substantial memory to process</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>Close other browser tabs</strong> to free up memory</li>
+                            <li><strong>Restart your browser</strong> to clear memory leaks</li>
+                            <li><strong>Use a 64-bit browser</strong> if available (higher memory limits)</li>
+                            <li><strong>Try a different browser</strong> - some handle memory better than others</li>
+                            <li><strong>Close other applications</strong> on your computer</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry After Closing Other Tabs'
+                },
+                'timeout': {
+                    title: '⏱️ Loading Timeout',
+                    message: 'The data took too long to load and the request timed out. This may be due to slow network or large data files.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li>Slow internet connection or high latency</li>
+                            <li>Large Parquet file requiring significant download time</li>
+                            <li>Server processing time for complex queries</li>
+                            <li>Network congestion or routing issues</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>Check your connection speed</strong> - try running a speed test</li>
+                            <li><strong>Refresh the page</strong> - temporary network issues may resolve</li>
+                            <li><strong>Try a different network</strong> - switch between WiFi and mobile data</li>
+                            <li><strong>Try during off-peak hours</strong> - network congestion may be lower</li>
+                            <li><strong>Use a wired connection</strong> if available for more stable connectivity</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading'
+                },
+                'unknown-error': {
+                    title: '❓ Unexpected Error',
+                    message: 'An unexpected error occurred while loading the dashboard.',
+                    details: `
+                        <h4>Error Details:</h4>
+                        <ul>
+                            <li>Error message: <code>${details.error || 'Unknown error'}</code></li>
+                            <li>Error type: <code>${details.errorType || 'Unknown'}</code></li>
+                        </ul>
+                        <h4>General Troubleshooting:</h4>
+                        <ul>
+                            <li>Refresh the page and try again</li>
+                            <li>Check your browser console for more error details (F12)</li>
+                            <li>Try a different browser</li>
+                            <li>Clear your browser cache</li>
+                            <li>If the problem persists, contact support with the error details above</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Try Again'
+                }
+            };
+
+            const errorState = errorStates[errorType] || errorStates['unknown-error'];
+
+            displayArea.innerHTML = `
+                <div class="error-state">
+                    <div class="error-state-title">
+                        <span class="error-state-icon">⚠️</span>
+                        <span>${errorState.title}</span>
+                    </div>
+                    <div class="error-state-message">${errorState.message}</div>
+                    <div class="error-state-details">${errorState.details}</div>
+                    ${errorState.retryable ? `<button class="error-retry-button" onclick="alert('This would trigger a retry in the actual dashboard.')">${errorState.retryAction}</button>` : ''}
+                </div>
+            `;
+        }
+
+        function testLoading() {
+            displayArea.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">Loading auction data...</div>
+                </div>
+            `;
+        }
+
+        function testFallback() {
+            displayArea.innerHTML = `
+                <div class="fallback-mode">
+                    <div class="fallback-mode-title">⚠️ Using Sample Data</div>
+                    <div class="fallback-mode-text">
+                        The dashboard is currently displaying sample/mock data because the live auction data could not be loaded.
+                        This is for demonstration purposes only. The filters and sorting work, but the results are not real auction listings.
+                    </div>
+                </div>
+            `;
+        }
+
+        function clearDisplay() {
+            displayArea.innerHTML = '';
+        }
+
+        function testError(type, customDetails = {}) {
+            showErrorState(type, customDetails);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: hetzner-auction-dashboard-web-deploy
+  namespace: argo
+  annotations:
+    descriptions: "Deploys hetzner-auction-dashboard web/ to Cloudflare Pages via wrangler Direct Upload (ADR-6)"
+spec:
+  templates:
+    # Main workflow template
+    - name: hetzner-auction-dashboard-web-deploy
+      inputs:
+        parameters:
+          - name: repo_url
+            value: https://git.ardenone.com/jedarden/hetzner-auction-dashboard.git
+          - name: branch
+            value: main
+          - name: commit_sha
+            default: ""
+          - name: cloudflare_project_name
+            value: hetzner-auction-dashboard
+          - name: cloudflare_account_id
+            # Should be provided via secret parameter
+            default: ""
+      steps:
+        - - name: checkout-and-build
+            template: build-web-artifacts
+            arguments:
+              parameters:
+                - name: repo_url
+                  value: "{{inputs.parameters.repo_url}}"
+                - name: branch
+                  value: "{{inputs.parameters.branch}}"
+                - name: commit_sha
+                  value: "{{inputs.parameters.commit_sha}}"
+
+        - - name: deploy-to-cloudflare
+            template: deploy-pages
+            arguments:
+              parameters:
+                - name: cloudflare_project_name
+                  value: "{{inputs.parameters.cloudflare_project_name}}"
+                - name: cloudflare_account_id
+                  value: "{{inputs.parameters.cloudflare_account_id}}"
+              artifacts:
+                - name: web-artifacts
+                  from: "{{steps.checkout-and-build.outputs.artifacts.web-artifacts}}"
+
+    # Checkout and build web artifacts
+    - name: build-web-artifacts
+      inputs:
+        parameters:
+          - name: repo_url
+          - name: branch
+          - name: commit_sha
+            default: ""
+      outputs:
+        artifacts:
+          - name: web-artifacts
+            path: /tmp/web-artifacts
+            archive:
+              none: {}  # Keep as uncompressed directory for wrangler
+      container:
+        image: node:20-alpine
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            set -e
+
+            echo "Checking out repository..."
+            git clone --depth 1 --branch "{{inputs.parameters.branch}}" "{{inputs.parameters.repo_url}}" /workspace
+
+            # If specific commit SHA is provided, checkout that commit
+            if [ -n "{{inputs.parameters.commit_sha}}" ]; then
+              echo "Checking out specific commit: {{inputs.parameters.commit_sha}}"
+              cd /workspace
+              git fetch --depth 1 origin "{{inputs.parameters.commit_sha}}"
+              git checkout "{{inputs.parameters.commit_sha}}"
+            fi
+
+            echo "Preparing web artifacts for Cloudflare Pages..."
+            cd /workspace
+
+            # The web/ directory contains static HTML files - no build step needed
+            # Just copy the web/ directory to the artifacts output
+            echo "Copying web/ directory to artifacts location..."
+            cp -r web/ /tmp/web-artifacts/
+
+            echo "Web artifacts prepared successfully"
+            ls -la /tmp/web-artifacts/
+
+            # Create a simple build info file for debugging
+            echo "Build commit: $(cd /workspace && git rev-parse HEAD)" > /tmp/web-artifacts/BUILD_INFO.txt
+            echo "Build time: $(date)" >> /tmp/web-artifacts/BUILD_INFO.txt
+            echo "Branch: {{inputs.parameters.branch}}" >> /tmp/web-artifacts/BUILD_INFO.txt
+      retryStrategy:
+        limit: 2
+        retryPolicy: "Always"
+
+    # Deploy to Cloudflare Pages via wrangler Direct Upload
+    - name: deploy-pages
+      inputs:
+        parameters:
+          - name: cloudflare_project_name
+          - name: cloudflare_account_id
+        artifacts:
+          - name: web-artifacts
+            path: /tmp/web-artifacts
+      container:
+        image: node:20-alpine
+        env:
+          - name: CLOUDFLARE_ACCOUNT_ID
+            value: "{{inputs.parameters.cloudflare_account_id}}"
+          - name: CLOUDFLARE_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-api-token
+                key: token
+          - name: CLOUDFLARE_PROJECT_NAME
+            value: "{{inputs.parameters.cloudflare_project_name}}"
+        command:
+          - sh
+          - -c
+        args:
+          - |
+            set -e
+
+            echo "Installing wrangler..."
+            npm install -g wrangler
+
+            echo "Deploying to Cloudflare Pages via Direct Upload..."
+            echo "Account: ${CLOUDFLARE_ACCOUNT_ID}"
+            echo "Project: ${CLOUDFLARE_PROJECT_NAME}"
+
+            # Change to artifacts directory
+            cd /tmp/web-artifacts
+
+            # Deploy using wrangler pages deploy (Direct Upload)
+            # This bypasses Cloudflare's git-integration build system per ADR-6
+            wrangler pages deploy \
+              . \
+              --project-name="${CLOUDFLARE_PROJECT_NAME}" \
+              --branch=main \
+              --commit-hash="$(cat BUILD_INFO.txt | grep 'Build commit' | cut -d' ' -f3-)" \
+              --commit-message="$(cat BUILD_INFO.txt | grep 'Build time' | cut -d' ' -f3-)" \
+              --compatibility-date="$(date -u +%Y-%m-%d)"
+
+            echo "Deployment completed successfully!"
+      retryStrategy:
+        limit: 2
+        retryPolicy: "OnError"
+
+# Note: This WorkflowTemplate should be synced to the cluster via ArgoCD
+# from jedarden/declarative-config repository under k8s/iad-ci/argo-workflows/
+# See ADR-6 for rationale on using wrangler Direct Upload instead of Cloudflare's git integration

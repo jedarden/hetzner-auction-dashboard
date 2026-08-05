@@ -1,0 +1,206 @@
+/**
+ * Snapshot Diff System Styles
+ * Bead: had-33l
+ */
+
+/* Diff Summary Banner */
+.diff-summary {
+    background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%);
+    border: 2px solid #9c27b0;
+    border-radius: 8px;
+    padding: 15px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    box-shadow: 0 2px 8px rgba(156, 39, 176, 0.2);
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.diff-summary strong {
+    color: #6a1b9a;
+    font-size: 0.95rem;
+}
+
+.diff-summary-content {
+    flex: 1;
+    color: #4a148c;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+/* Diff Details Button */
+.diff-details-btn {
+    background: linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.diff-details-btn:hover {
+    background: linear-gradient(135deg, #7b1fa2 0%, #6a1b9a 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(156, 39, 176, 0.3);
+}
+
+.diff-details-btn:active {
+    transform: translateY(0);
+}
+
+/* Change badges for individual listings */
+.listing-change-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.listing-change-badge.new {
+    background: #c8e6c9;
+    color: #2e7d32;
+    border: 1px solid #4caf50;
+}
+
+.listing-change-badge.removed {
+    background: #ffcdd2;
+    color: #c62828;
+    border: 1px solid #ef5350;
+}
+
+.listing-change-badge.price-down {
+    background: #c8e6c9;
+    color: #2e7d32;
+    border: 1px solid #4caf50;
+}
+
+.listing-change-badge.price-up {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef5350;
+}
+
+.listing-change-badge.spec-change {
+    background: #fff3e0;
+    color: #ef6c00;
+    border: 1px solid #ff9800;
+}
+
+/* Price change indicator */
+.price-change-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin-left: 10px;
+}
+
+.price-change-indicator.decrease {
+    background: #c8e6c9;
+    color: #2e7d32;
+}
+
+.price-change-indicator.increase {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.price-change-indicator .icon {
+    font-size: 1rem;
+}
+
+/* Stale data indicator for old snapshots */
+.diff-stale-warning {
+    background: #fff3e0;
+    border: 2px solid #ff9800;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 15px;
+    font-size: 0.85rem;
+    color: #e65100;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.diff-stale-warning .icon {
+    font-size: 1.2rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .diff-summary {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+
+    .diff-details-btn {
+        width: 100%;
+    }
+
+    .listing-change-badge {
+        display: block;
+        margin: 5px 0 0 0;
+    }
+}
+
+/* Animation for new listings in the main view */
+.listing.new-listing {
+    border: 2px solid #4caf50;
+    background: linear-gradient(135deg, #f1f8e9 0%, #ffffff 100%);
+    animation: pulseNew 2s ease-in-out;
+}
+
+@keyframes pulseNew {
+    0%, 100% {
+        box-shadow: 0 4px 12px rgba(76, 175, 80, 0.1);
+    }
+    50% {
+        box-shadow: 0 4px 20px rgba(76, 175, 80, 0.3);
+    }
+}
+
+.listing.price-decrease {
+    border: 2px solid #4caf50;
+    background: linear-gradient(135deg, #e8f5e9 0%, #ffffff 100%);
+}
+
+.listing.price-increase {
+    border: 2px solid #ef5350;
+    background: linear-gradient(135deg, #ffebee 0%, #ffffff 100%);
+}
+
+/* Empty state for no changes */
+.no-changes-message {
+    background: #f5f5f5;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+    color: #757575;
+    font-size: 0.9rem;
+    font-style: italic;
+}

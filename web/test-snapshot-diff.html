@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snapshot Diff Test - Hetzner Auction Dashboard</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+
+        h1 {
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #6c757d;
+            margin-bottom: 30px;
+        }
+
+        .test-section {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .test-section h2 {
+            color: #1a1a1a;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .test-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background: #4c6ef5;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #3b5bdb;
+            transform: translateY(-1px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button.danger {
+            background: #ef5350;
+        }
+
+        button.danger:hover {
+            background: #d32f2f;
+        }
+
+        button.success {
+            background: #4caf50;
+        }
+
+        button.success:hover {
+            background: #388e3c;
+        }
+
+        .results {
+            background: #f8f9fa;
+            border-radius: 6px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .results h3 {
+            color: #1a1a1a;
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+
+        .result-item {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .result-item .badge {
+            display: inline-block;
+            background: #e3f2fd;
+            color: #1971c2;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+
+        .result-item.new .badge { background: #c8e6c9; color: #2e7d32; }
+        .result-item.removed .badge { background: #ffcdd2; color: #c62828; }
+        .result-item.price-down .badge { background: #c8e6c9; color: #2e7d32; }
+        .result-item.price-up .badge { background: #ffebee; color: #c62828; }
+
+        .result-item .details {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .console-output {
+            background: #1e1e1e;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 15px;
+            border-radius: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            margin-top: 15px;
+        }
+
+        .console-output .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .console-output .timestamp {
+            color: #888;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .stat-card .label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+
+        .stat-card.positive .value {
+            color: #2e7d32;
+        }
+
+        .stat-card.negative .value {
+            color: #c62828;
+        }
+
+        .explanation {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #0d47a1;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔄 Snapshot Diff Test Suite</h1>
+    <p class="subtitle">Test client-side comparison of auction snapshots (Bead: had-33l)</p>
+
+    <div class="explanation">
+        <strong>What this tests:</strong> The snapshot diff system caches previous auction data in IndexedDB and compares it against current data to detect new listings, removed listings, and price changes. This gives users visibility into "what changed since I last looked" without needing server-side historical data.
+    </div>
+
+    <!-- Test Controls -->
+    <div class="test-section">
+        <h2>🎮 Test Controls</h2>
+        <div class="test-controls">
+            <button onclick="runTest1()">Test 1: New Listings</button>
+            <button onclick="runTest2()">Test 2: Removed Listings</button>
+            <button onclick="runTest3()">Test 3: Price Changes</button>
+            <button onclick="runTest4()">Test 4: Mixed Changes</button>
+            <button onclick="runTest5()">Test 5: No Changes</button>
+            <button class="success" onclick="checkCurrentState()">Check Current State</button>
+            <button class="danger" onclick="resetAllData()">Reset All Data</button>
+        </div>
+    </div>
+
+    <!-- Results Display -->
+    <div class="test-section">
+        <h2>📊 Test Results</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">New Listings</div>
+                <div class="value" id="stat-new">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Removed Listings</div>
+                <div class="value" id="stat-removed">-</div>
+            </div>
+            <div class="stat-card negative">
+                <div class="label">Price Increases</div>
+                <div class="value" id="stat-increases">-</div>
+            </div>
+            <div class="stat-card positive">
+                <div class="label">Price Decreases</div>
+                <div class="value" id="stat-decreases">-</div>
+            </div>
+        </div>
+        <div id="results-container"></div>
+    </div>
+
+    <!-- Console Output -->
+    <div class="test-section">
+        <h2>🖥️ Console Output</h2>
+        <div class="console-output" id="console-output"></div>
+    </div>
+
+    <!-- Load the snapshot diff module -->
+    <script src="snapshot-diff.js"></script>
+
+    <script>
+        // Mock data generators for testing
+        const baseListings = [
+            {
+                id: 1,
+                cpu_model: "Ryzen 9 5950X",
+                cpu_cores: 16,
+                ram_gb: 128,
+                disks: [{ type: "nvme", count: 1, size_gb: 2000 }],
+                price_effective_monthly: 45.99,
+                location: "fsn",
+                benchmark_multi: 51234,
+                benchmark_single: 4287,
+                benchmark_matched: true
+            },
+            {
+                id: 2,
+                cpu_model: "Xeon E5-2680 v4",
+                cpu_cores: 14,
+                ram_gb: 64,
+                disks: [{ type: "hdd", count: 4, size_gb: 1000 }],
+                price_effective_monthly: 28.50,
+                location: "nbg",
+                benchmark_multi: 18907,
+                benchmark_single: 2134,
+                benchmark_matched: true
+            },
+            {
+                id: 3,
+                cpu_model: "Core i7-12700",
+                cpu_cores: 12,
+                ram_gb: 32,
+                disks: [{ type: "nvme", count: 1, size_gb: 1000 }],
+                price_effective_monthly: 22.75,
+                location: "hel",
+                benchmark_multi: 24843,
+                benchmark_single: 3891,
+                benchmark_matched: true
+            }
+        ];
+
+        function log(message) {
+            const console = document.getElementById('console-output');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            console.appendChild(entry);
+            console.scrollTop = console.scrollHeight;
+        }
+
+        function displayResults(diff) {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '';
+
+            // Update stats
+            document.getElementById('stat-new').textContent = diff.new.length;
+            document.getElementById('stat-removed').textContent = diff.removed.length;
+
+            const increases = diff.priceChanges.filter(c => c.priceDifference > 0);
+            const decreases = diff.priceChanges.filter(c => c.priceDifference < 0);
+            document.getElementById('stat-increases').textContent = increases.length;
+            document.getElementById('stat-decreases').textContent = decreases.length;
+
+            // Display new listings
+            if (diff.new.length > 0) {
+                const section = document.createElement('div');
+                section.innerHTML = '<h3>New Listings</h3>';
+                diff.new.forEach(listing => {
+                    const item = document.createElement('div');
+                    item.className = 'result-item new';
+                    item.innerHTML = `
+                        <span class="badge">NEW</span>
+                        <strong>${listing.cpu_model}</strong>, ${listing.ram_gb}GB RAM
+                        <div class="details">€${listing.price_effective_monthly.toFixed(2)}/month • ${listing.location}</div>
+                    `;
+                    section.appendChild(item);
+                });
+                container.appendChild(section);
+            }
+
+            // Display removed listings
+            if (diff.removed.length > 0) {
+                const section = document.createElement('div');
+                section.innerHTML = '<h3>Removed Listings</h3>';
+                diff.removed.forEach(listing => {
+                    const item = document.createElement('div');
+                    item.className = 'result-item removed';
+                    item.innerHTML = `
+                        <span class="badge">REMOVED</span>
+                        <strong>${listing.cpu_model}</strong>, ${listing.ram_gb}GB RAM
+                        <div class="details">Was €${listing.price_effective_monthly.toFixed(2)}/month • ${listing.location}</div>
+                    `;
+                    section.appendChild(item);
+                });
+                container.appendChild(section);
+            }
+
+            // Display price changes
+            if (diff.priceChanges.length > 0) {
+                const section = document.createElement('div');
+                section.innerHTML = '<h3>Price Changes</h3>';
+                diff.priceChanges.forEach(change => {
+                    const item = document.createElement('div');
+                    const direction = change.priceDifference < 0 ? 'down' : 'up';
+                    const arrow = change.priceDifference < 0 ? '↓' : '↑';
+                    item.className = `result-item price-${direction}`;
+                    item.innerHTML = `
+                        <span class="badge">PRICE ${arrow}</span>
+                        <strong>${change.current.cpu_model}</strong>, ${change.ram_gb}GB RAM
+                        <div class="details">
+                            €${change.oldPrice.toFixed(2)} → €${change.newPrice.toFixed(2)}
+                            (${change.percentChange >= 0 ? '+' : ''}${change.percentChange.toFixed(1)}%)
+                        </div>
+                    `;
+                    section.appendChild(item);
+                });
+                container.appendChild(section);
+            }
+
+            if (diff.new.length === 0 && diff.removed.length === 0 && diff.priceChanges.length === 0) {
+                container.innerHTML = '<div class="result-item"><strong>No changes detected</strong></div>';
+            }
+        }
+
+        async function runTest1() {
+            log('🧪 Test 1: New Listings');
+            log('Creating baseline snapshot...');
+
+            // First, establish a baseline
+            await snapshotDiffManager.processCurrentListings(baseListings);
+
+            // Create new listings with different configs
+            const newListings = [...baseListings, {
+                id: 4,
+                cpu_model: "Ryzen 7 5800X",
+                cpu_cores: 8,
+                ram_gb: 64,
+                disks: [{ type: "nvme", count: 1, size_gb: 1000 }],
+                price_effective_monthly: 38.25,
+                location: "fsn",
+                benchmark_multi: 28756,
+                benchmark_single: 3782,
+                benchmark_matched: true
+            }];
+
+            log('Processing updated listings with new item...');
+            const diff = await snapshotDiffManager.processCurrentListings(newListings);
+
+            log(`✅ Results: ${diff.new.length} new, ${diff.removed.length} removed, ${diff.priceChanges.length} price changes`);
+            displayResults(diff);
+        }
+
+        async function runTest2() {
+            log('🧪 Test 2: Removed Listings');
+            log('Creating baseline snapshot...');
+
+            // First, establish a baseline with more items
+            const baseline = [...baseListings, {
+                id: 4,
+                cpu_model: "Ryzen 7 5800X",
+                cpu_cores: 8,
+                ram_gb: 64,
+                disks: [{ type: "nvme", count: 1, size_gb: 1000 }],
+                price_effective_monthly: 38.25,
+                location: "fsn",
+                benchmark_multi: 28756,
+                benchmark_single: 3782,
+                benchmark_matched: true
+            }];
+
+            await snapshotDiffManager.processCurrentListings(baseline);
+
+            // Remove one listing
+            log('Processing updated listings with one item removed...');
+            const diff = await snapshotDiffManager.processCurrentListings(baseListings);
+
+            log(`✅ Results: ${diff.new.length} new, ${diff.removed.length} removed, ${diff.priceChanges.length} price changes`);
+            displayResults(diff);
+        }
+
+        async function runTest3() {
+            log('🧪 Test 3: Price Changes');
+            log('Creating baseline snapshot...');
+
+            // Establish baseline
+            await snapshotDiffManager.processCurrentListings(baseListings);
+
+            // Change prices
+            const priceChanges = baseListings.map(listing => ({
+                ...listing,
+                price_effective_monthly: listing.price_effective_monthly * (listing.id === 1 ? 0.8 : 1.2)
+            }));
+
+            log('Processing updated listings with price changes...');
+            const diff = await snapshotDiffManager.processCurrentListings(priceChanges);
+
+            log(`✅ Results: ${diff.new.length} new, ${diff.removed.length} removed, ${diff.priceChanges.length} price changes`);
+            displayResults(diff);
+        }
+
+        async function runTest4() {
+            log('🧪 Test 4: Mixed Changes');
+            log('Creating baseline snapshot...');
+
+            // Establish baseline
+            await snapshotDiffManager.processCurrentListings(baseListings);
+
+            // Mixed changes: add one, remove one, change prices
+            const mixed = [
+                baseListings[0], // Keep same
+                { ...baseListings[1], price_effective_monthly: 25.00 }, // Price change
+                { // New listing
+                    id: 4,
+                    cpu_model: "Ryzen 7 5800X",
+                    cpu_cores: 8,
+                    ram_gb: 64,
+                    disks: [{ type: "nvme", count: 1, size_gb: 1000 }],
+                    price_effective_monthly: 38.25,
+                    location: "fsn",
+                    benchmark_multi: 28756,
+                    benchmark_single: 3782,
+                    benchmark_matched: true
+                }
+                // id 3 is removed
+            ];
+
+            log('Processing updated listings with mixed changes...');
+            const diff = await snapshotDiffManager.processCurrentListings(mixed);
+
+            log(`✅ Results: ${diff.new.length} new, ${diff.removed.length} removed, ${diff.priceChanges.length} price changes`);
+            displayResults(diff);
+        }
+
+        async function runTest5() {
+            log('🧪 Test 5: No Changes');
+            log('Creating baseline snapshot...');
+
+            // Establish baseline
+            await snapshotDiffManager.processCurrentListings(baseListings);
+
+            // Same data
+            log('Processing identical listings...');
+            const diff = await snapshotDiffManager.processCurrentListings(baseListings);
+
+            log(`✅ Results: ${diff.new.length} new, ${diff.removed.length} removed, ${diff.priceChanges.length} price changes`);
+            displayResults(diff);
+        }
+
+        async function checkCurrentState() {
+            log('🔍 Checking current state...');
+            const diff = snapshotDiffManager.getCurrentDiff();
+
+            if (diff) {
+                log(`Current diff data available:`);
+                log(`- New: ${diff.new.length}`);
+                log(`- Removed: ${diff.removed.length}`);
+                log(`- Price changes: ${diff.priceChanges.length}`);
+                log(`- Has previous data: ${diff.hasPreviousData}`);
+                displayResults(diff);
+            } else {
+                log('No diff data available. Run a test first.');
+            }
+        }
+
+        async function resetAllData() {
+            log('🗑️ Resetting all snapshot data...');
+            await snapshotDiffManager.reset();
+            log('✅ All data reset. Clearing display...');
+
+            document.getElementById('stat-new').textContent = '-';
+            document.getElementById('stat-removed').textContent = '-';
+            document.getElementById('stat-increases').textContent = '-';
+            document.getElementById('stat-decreases').textContent = '-';
+            document.getElementById('results-container').innerHTML = '<div class="result-item">Data reset. Run a test to begin.</div>';
+        }
+
+        // Initialize
+        log('🚀 Initializing snapshot diff system...');
+        snapshotDiffManager.initialize().then(() => {
+            log('✅ System ready. Run a test to begin.');
+        }).catch(error => {
+            log('❌ Failed to initialize: ' + error.message);
+        });
+    </script>
+</body>
+</html>

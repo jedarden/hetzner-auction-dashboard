@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+src/hetzner_auction_pipeline.egg-info/PKG-INFO
+src/hetzner_auction_pipeline.egg-info/SOURCES.txt
+src/hetzner_auction_pipeline.egg-info/dependency_links.txt
+src/hetzner_auction_pipeline.egg-info/requires.txt
+src/hetzner_auction_pipeline.egg-info/top_level.txt
+src/pipeline/__init__.py
+src/pipeline/fetcher.py
+tests/test_fetcher.py

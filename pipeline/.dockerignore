@@ -1,0 +1,66 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+*.egg
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+docs/
+*.md
+LICENSE
+README*
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Local files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Test artifacts
+test_output/
+test_results/
+
+# k8s manifests (not needed in image)
+k8s/
+
+# Beads tracking
+.beads/
+
+# Notes (not needed in image)
+notes/
