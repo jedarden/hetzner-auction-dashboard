@@ -1,0 +1,81 @@
+{
+  "presets": [
+    {
+      "id": "budget-web-server",
+      "name": "Budget Web Server",
+      "description": "Affordable option for hosting web applications and light workloads",
+      "icon": "🌐",
+      "filters": {
+        "price_effective_monthly_max": 30,
+        "ram_gb_min": 16,
+        "cpu_family_preference": "any",
+        "disk_type": "any",
+        "benchmark_matched_only": true
+      },
+      "sort": "price_per_benchmark_point_multi",
+      "sort_direction": "asc"
+    },
+    {
+      "id": "home-nas",
+      "name": "Home NAS",
+      "description": "High storage capacity for file server, backup, or media storage",
+      "icon": "💾",
+      "filters": {
+        "price_effective_monthly_max": 50,
+        "ram_gb_min": 8,
+        "disk_type": "hdd",
+        "disk_size_tb_min": 4,
+        "cpu_family_preference": "any",
+        "benchmark_matched_only": false
+      },
+      "sort": "price_per_tb_disk",
+      "sort_direction": "asc"
+    },
+    {
+      "id": "game-server",
+      "name": "Game Server",
+      "description": "High single-thread performance for game hosting and latency-sensitive workloads",
+      "icon": "🎮",
+      "filters": {
+        "price_effective_monthly_max": 60,
+        "ram_gb_min": 32,
+        "cpu_family_preference": "ryzen",
+        "disk_type": "nvme",
+        "benchmark_matched_only": true
+      },
+      "sort": "price_per_benchmark_point_single",
+      "sort_direction": "asc"
+    },
+    {
+      "id": "compute-intensive",
+      "name": "Compute Intensive",
+      "description": "Maximum multi-thread performance for rendering, scientific computing, or batch processing",
+      "icon": "⚡",
+      "filters": {
+        "price_effective_monthly_max": 80,
+        "ram_gb_min": 64,
+        "cpu_family_preference": "any",
+        "disk_type": "any",
+        "benchmark_matched_only": true
+      },
+      "sort": "price_per_benchmark_point_multi",
+      "sort_direction": "asc"
+    },
+    {
+      "id": "storage-focused",
+      "name": "Storage Focused",
+      "description": "Best value per terabyte for bulk storage, backups, or archives",
+      "icon": "📦",
+      "filters": {
+        "price_effective_monthly_max": 40,
+        "ram_gb_min": 16,
+        "disk_type": "hdd",
+        "disk_size_tb_min": 2,
+        "cpu_family_preference": "any",
+        "benchmark_matched_only": false
+      },
+      "sort": "price_per_tb_disk",
+      "sort_direction": "asc"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+raw_pattern,canonical_model
+# Xeon E5 v4 series aliases
+Xeon E5-2680 v4,Intel Xeon E5-2680 v4
+E5-2680 v4,Intel Xeon E5-2680 v4
+E5-2680v4,Intel Xeon E5-2680 v4
+Intel Xeon E5-2680v4,Intel Xeon E5-2680 v4
+Xeon E5-2660 v4,Intel Xeon E5-2660 v4
+E5-2660 v4,Intel Xeon E5-2660 v4
+E5-2660v4,Intel Xeon E5-2660 v4
+Intel Xeon E5-2660v4,Intel Xeon E5-2660 v4
+Xeon E5-2650 v4,Intel Xeon E5-2650 v4
+E5-2650 v4,Intel Xeon E5-2650 v4
+E5-2650v4,Intel Xeon E5-2650 v4
+Intel Xeon E5-2650v4,Intel Xeon E5-2650 v4
+Xeon E5-2640 v4,Intel Xeon E5-2640 v4
+E5-2640 v4,Intel Xeon E5-2640 v4
+E5-2640v4,Intel Xeon E5-2640 v4
+Intel Xeon E5-2640v4,Intel Xeon E5-2640 v4
+
+# Xeon E5 v3 series aliases
+Xeon E5-2680 v3,Intel Xeon E5-2680 v3
+E5-2680 v3,Intel Xeon E5-2680 v3
+E5-2680v3,Intel Xeon E5-2680 v3
+Intel Xeon E5-2680v3,Intel Xeon E5-2680 v3
+Xeon E5-2660 v3,Intel Xeon E5-2660 v3
+E5-2660 v3,Intel Xeon E5-2660 v3
+E5-2660v3,Intel Xeon E5-2660 v3
+Intel Xeon E5-2660v3,Intel Xeon E5-2660 v3
+Xeon E5-2650 v3,Intel Xeon E5-2650 v3
+E5-2650 v3,Intel Xeon E5-2650 v3
+E5-2650v3,Intel Xeon E5-2650 v3
+Intel Xeon E5-2650v3,Intel Xeon E5-2650 v3
+Xeon E5-2640 v3,Intel Xeon E5-2640 v3
+E5-2640 v3,Intel Xeon E5-2640 v3
+E5-2640v3,Intel Xeon E5-2640 v3
+Intel Xeon E5-2640v3,Intel Xeon E5-2640 v3
+
+# Xeon E5 v2 series aliases
+Xeon E5-2680 v2,Intel Xeon E5-2680 v2
+E5-2680 v2,Intel Xeon E5-2680 v2
+E5-2680v2,Intel Xeon E5-2680 v2
+Intel Xeon E5-2680v2,Intel Xeon E5-2680 v2
+Xeon E5-2660 v2,Intel Xeon E5-2660 v2
+E5-2660 v2,Intel Xeon E5-2660 v2
+E5-2660v2,Intel Xeon E5-2660 v2
+Intel Xeon E5-2660v2,Intel Xeon E5-2660 v2
+Xeon E5-2650 v2,Intel Xeon E5-2650 v2
+E5-2650 v2,Intel Xeon E5-2650 v2
+E5-2650v2,Intel Xeon E5-2650 v2
+Intel Xeon E5-2650v2,Intel Xeon E5-2650 v2
+Xeon E5-2640 v2,Intel Xeon E5-2640 v2
+E5-2640 v2,Intel Xeon E5-2640 v2
+E5-2640v2,Intel Xeon E5-2640 v2
+Intel Xeon E5-2640v2,Intel Xeon E5-2640 v2
+
+# Xeon E5 v1 series aliases
+Xeon E5-2680,Intel Xeon E5-2680 v1
+E5-2680,Intel Xeon E5-2680 v1
+Xeon E5-2660,Intel Xeon E5-2660 v1
+E5-2660,Intel Xeon E5-2660 v1
+Xeon E5-2650,Intel Xeon E5-2650
+E5-2650,Intel Xeon E5-2650
+Xeon E5-2640,Intel Xeon E5-2640
+E5-2640,Intel Xeon E5-2640
+
+# AMD EPYC aliases
+AMD EPYC 7401P,AMD EPYC 7401P
+EPYC 7401P,AMD EPYC 7401P
+AMD EPYC 7351P,AMD EPYC 7351P
+EPYC 7351P,AMD EPYC 7351P
+AMD EPYC 7301P,AMD EPYC 7301P
+EPYC 7301P,AMD EPYC 7301P
+AMD EPYC 7551,AMD EPYC 7551
+EPYC 7551,AMD EPYC 7551
+AMD EPYC 7452,AMD EPYC 7452
+EPYC 7452,AMD EPYC 7452
+AMD EPYC 7402,AMD EPYC 7402
+EPYC 7402,AMD EPYC 7402
+AMD EPYC 7742,AMD EPYC 7742
+EPYC 7742,AMD EPYC 7742
+AMD EPYC 7702,AMD EPYC 7702
+EPYC 7702,AMD EPYC 7702
+
+# AMD Ryzen aliases
+AMD Ryzen 9 7950X,AMD Ryzen 9 7950X
+Ryzen 9 7950X,AMD Ryzen 9 7950X
+AMD Ryzen 9 7900X,AMD Ryzen 9 7900X
+Ryzen 9 7900X,AMD Ryzen 9 7900X
+AMD Ryzen 9 5950X,AMD Ryzen 9 5950X
+Ryzen 9 5950X,AMD Ryzen 9 5950X
+AMD Ryzen 7 5800X,AMD Ryzen 7 5800X
+Ryzen 7 5800X,AMD Ryzen 7 5800X
+
+# Intel Core aliases
+Intel Core i9-12900K,Intel Core i9-12900K
+Core i9-12900K,Intel Core i9-12900K
+i9-12900K,Intel Core i9-12900K
+Intel Core i7-12700K,Intel Core i7-12700K
+Core i7-12700K,Intel Core i7-12700K
+i7-12700K,Intel Core i7-12700K
+Intel Core i5-12600K,Intel Core i5-12600K
+Core i5-12600K,Intel Core i5-12600K
+i5-12600K,Intel Core i5-12600K

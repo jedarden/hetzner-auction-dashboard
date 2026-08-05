@@ -1,0 +1,2617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hetzner Auction Dashboard</title>
+    <link rel="stylesheet" href="snapshot-diff.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f8f9fa;
+            color: #212529;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #6c757d;
+            font-size: 1rem;
+        }
+
+        /* Best Deal Now Button */
+        .best-deal-container {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .best-deal-button {
+            background: linear-gradient(135deg, #228be6 0%, #1c7ed6 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(34, 139, 230, 0.3);
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .best-deal-button:hover {
+            background: linear-gradient(135deg, #1c7ed6 0%, #1971c2 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(34, 139, 230, 0.4);
+        }
+
+        .best-deal-button:active {
+            transform: translateY(0);
+        }
+
+        .best-deal-button.active {
+            background: linear-gradient(135deg, #2f9e44 0%, #2b8a3e 100%);
+            box-shadow: 0 4px 15px rgba(47, 158, 68, 0.3);
+        }
+
+        .best-deal-button.active:hover {
+            background: linear-gradient(135deg, #2b8a3e 0%, #23993d 100%);
+            box-shadow: 0 6px 20px rgba(47, 158, 68, 0.4);
+        }
+
+        .best-deal-icon {
+            font-size: 1.3rem;
+        }
+
+        .best-deal-description {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+
+        /* Starter Configs Section */
+        .starter-configs {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .starter-configs h2 {
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            color: #1a1a1a;
+        }
+
+        .starter-configs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .config-preset {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .config-preset:hover {
+            border-color: #4c6ef5;
+            background: #f1f3ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(76, 110, 245, 0.2);
+        }
+
+        .config-preset.active {
+            border-color: #4c6ef5;
+            background: #e7f2ff;
+        }
+
+        .config-icon {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .config-name {
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 5px;
+            font-size: 0.95rem;
+        }
+
+        .config-description {
+            font-size: 0.85rem;
+            color: #6c757d;
+            line-height: 1.4;
+        }
+
+        /* Filters Section */
+        .filters {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .filters h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #343a40;
+            font-size: 0.9rem;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #4c6ef5;
+            box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.1);
+        }
+
+        .filter-group .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .filter-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+
+        /* Sort Selector */
+        .sort-selector {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .sort-selector label {
+            font-weight: 600;
+            color: #343a40;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+
+        .sort-selector select {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            background: white;
+            cursor: pointer;
+        }
+
+        .sort-selector select:focus {
+            outline: none;
+            border-color: #4c6ef5;
+            box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.1);
+        }
+
+        .sort-description {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 8px;
+            line-height: 1.4;
+        }
+
+        /* Reset Filters Button */
+        .reset-filters {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            transition: background 0.2s;
+            margin-top: 20px;
+        }
+
+        .reset-filters:hover {
+            background: #5a6268;
+        }
+
+        /* Results Section */
+        .results {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .results h2 {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+
+        .results-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .listing {
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background: #fff;
+            transition: box-shadow 0.2s;
+        }
+
+        .listing:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .listing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .listing-title {
+            flex: 1;
+        }
+
+        .listing-title h3 {
+            font-size: 1.2rem;
+            color: #1a1a1a;
+            margin-bottom: 5px;
+        }
+
+        .listing-specs {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+
+        .listing-price {
+            text-align: right;
+        }
+
+        .price {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #228be6;
+        }
+
+        .price-period {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+
+        .listing-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .metric-value.good {
+            color: #2f9e44;
+        }
+
+        .metric-value.unscored {
+            color: #868e96;
+            font-style: italic;
+        }
+
+        .unscored-badge {
+            display: inline-block;
+            background: #f1f3ff;
+            color: #5c7cfa;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .cloud-comparison {
+            display: inline-block;
+            background: #e3f2e9;
+            color: #2b8a3e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .cloud-comparison.unavailable {
+            background: #fff3bf;
+            color: #856404;
+        }
+
+        .staleness-indicator {
+            background: #fff3bf;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            border-left: 4px solid #ffc107;
+        }
+
+        .staleness-indicator #last-updated.fresh {
+            color: #2f9e44;
+            font-weight: 600;
+        }
+
+        .staleness-indicator #last-updated.moderate {
+            color: #fd7e14;
+        }
+
+        .staleness-indicator #last-updated.stale {
+            color: #f76707;
+            font-weight: 600;
+        }
+
+        .staleness-indicator #last-updated.very-stale {
+            color: #fa5252;
+            font-weight: 700;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        /* Error State Components */
+        .error-state {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .error-state-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #721c24;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .error-state-icon {
+            font-size: 1.5rem;
+        }
+
+        .error-state-message {
+            color: #721c24;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+
+        .error-state-details {
+            background: #fff;
+            border: 1px solid #f5c6cb;
+            border-radius: 6px;
+            padding: 15px;
+            font-size: 0.9rem;
+        }
+
+        .error-state-details h4 {
+            color: #721c24;
+            margin-bottom: 10px;
+            font-size: 1rem;
+        }
+
+        .error-state-details ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #721c24;
+        }
+
+        .error-state-details li {
+            margin-bottom: 8px;
+        }
+
+        .error-state-details code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85rem;
+            color: #c7254e;
+        }
+
+        .error-retry-button {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 15px;
+            transition: background 0.2s;
+        }
+
+        .error-retry-button:hover {
+            background: #c82333;
+        }
+
+        .error-retry-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .loading-state {
+            background: #e7f5ff;
+            border-left: 4px solid #007bff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: #004085;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        .fallback-mode {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .fallback-mode-title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .fallback-mode-text {
+            color: #856404;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+
+            .filter-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .listing-header {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .listing-price {
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Hetzner Auction Dashboard</h1>
+            <p class="subtitle">Find the best value in Hetzner's server auction with benchmark-based pricing</p>
+            <div class="best-deal-container">
+                <button class="best-deal-button" id="best-deal-now">
+                    <span class="best-deal-icon">⚡</span>
+                    <span>Best Deal Now</span>
+                </button>
+                <div class="best-deal-description" id="best-deal-description">
+                    Click to instantly show the single best-value server (highest benchmark value among scored listings)
+                </div>
+            </div>
+        </header>
+
+        <!-- Starter Configs -->
+        <div class="starter-configs">
+            <h2>🚀 Quick Start - Choose a preset</h2>
+            <div class="starter-configs-grid" id="starter-configs-grid">
+                <!-- Configs will be loaded here -->
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <h2>🔍 Filters</h2>
+            <div class="filter-grid">
+                <div class="filter-group">
+                    <label for="cpu-family">CPU Family</label>
+                    <select id="cpu-family">
+                        <option value="">Any</option>
+                        <option value="ryzen">AMD Ryzen</option>
+                        <option value="xeon">Intel Xeon</option>
+                        <option value="core">Intel Core</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="min-ram">Minimum RAM (GB)</label>
+                    <input type="number" id="min-ram" value="0" min="0" step="1">
+                </div>
+
+                <div class="filter-group">
+                    <label for="max-price">Maximum Price (€/month)</label>
+                    <input type="number" id="max-price" value="" min="0" step="0.01" placeholder="No limit">
+                </div>
+
+                <div class="filter-group">
+                    <label for="disk-type">Disk Type</label>
+                    <select id="disk-type">
+                        <option value="">Any</option>
+                        <option value="nvme">NVMe SSD</option>
+                        <option value="ssd">SATA SSD</option>
+                        <option value="hdd">HDD</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="min-disk">Minimum Disk Size (TB)</label>
+                    <input type="number" id="min-disk" value="0" min="0" step="0.5">
+                </div>
+
+                <div class="filter-group">
+                    <label for="location">Datacenter Location</label>
+                    <select id="location">
+                        <option value="">Any</option>
+                        <option value="fsn">Falkenstein</option>
+                        <option value="nbg">Nuremberg</option>
+                        <option value="hel">Helsinki</option>
+                        <option value="ash">Ashburn, VA</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="min-uplink">Minimum Uplink (Mbit/s)</label>
+                    <input type="number" id="min-uplink" value="0" min="0" step="100" placeholder="Any">
+                </div>
+
+                <div class="filter-group">
+                    <label for="cpu-model">CPU Model (contains)</label>
+                    <input type="text" id="cpu-model" value="" placeholder="e.g. 5950X, E5-2680">
+                </div>
+
+                <div class="filter-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="ecc-memory">
+                        <label for="ecc-memory">ECC memory only</label>
+                    </div>
+                </div>
+
+                <div class="filter-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="benchmark-matched-only">
+                        <label for="benchmark-matched-only">Benchmark matched only</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Primary Sort Axis Selector -->
+            <div class="sort-selector">
+                <label for="sort-axis">📊 Primary Sort Axis:</label>
+                <select id="sort-axis">
+                    <option value="auto">Auto (use preset default)</option>
+                    <option value="price_per_benchmark_point_multi">Benchmark Value (multi-thread)</option>
+                    <option value="price_per_benchmark_point_single">Benchmark Value (single-thread)</option>
+                    <option value="price_per_gb_ram">Value per GB RAM</option>
+                    <option value="price_per_tb_disk">Value per TB Disk</option>
+                </select>
+            </div>
+            <div class="sort-description" id="sort-description">
+                The default sort method prioritizes overall value (price per benchmark point). Choose a different primary axis to optimize for RAM-heavy or storage-heavy workloads.
+            </div>
+
+            <button class="reset-filters" id="reset-filters">Reset Filters</button>
+        </div>
+
+        <!-- Error States Container -->
+        <div id="error-container"></div>
+
+        <!-- Loading State Container -->
+        <div id="loading-container"></div>
+
+        <!-- Results -->
+        <div class="results">
+            <h2>📊 Results</h2>
+            <div class="staleness-indicator" id="staleness-indicator">
+                Last updated: <span id="last-updated">Loading...</span>
+            </div>
+            <div class="staleness-indicator" id="refresh-indicator">
+                🔄 Auto-refresh: <span id="next-refresh">Calculating...</span>
+            </div>
+            <div class="results-info">
+                Showing <span id="results-count">0</span> listings • Sorted by: <span id="current-sort">Value (multi-thread)</span>
+            </div>
+            <div id="listings-container">
+                <!-- Listings will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Hetzner Cloud pricing lookup table
+        let cloudPricingData = [];
+
+        // Data staleness tracking
+        let dataFetchedAt = null; // Will store the actual fetched_at timestamp from Parquet data
+
+        // Error state management
+        let currentErrorState = null;
+        let isLoadingData = false;
+        let duckDBLoadFailed = false;
+        let parquetFetchFailed = false;
+        let usingFallbackData = false;
+
+        // Refresh loop tracking
+        const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+        let lastRefreshTime = null;
+
+        // Load Cloud pricing data
+        async function loadCloudPricing() {
+            try {
+                const response = await fetch('hetzner-cloud-pricing.json');
+                const data = await response.json();
+                cloudPricingData = data.servers;
+                console.log('Cloud pricing loaded:', cloudPricingData.length, 'server types');
+            } catch (error) {
+                console.error('Failed to load Cloud pricing:', error);
+            }
+        }
+
+        // Find equivalent Cloud instance based on RAM (primary) and CPU cores (secondary)
+        function findEquivalentCloudInstance(ram_gb, cpu_cores) {
+            if (!cloudPricingData.length) return null;
+
+            // First, find servers with RAM >= auction listing RAM
+            let candidates = cloudPricingData.filter(server => server.ram_gb >= ram_gb);
+
+            if (candidates.length === 0) {
+                // If no server has enough RAM, find the largest available
+                candidates = cloudPricingData.slice().sort((a, b) => b.ram_gb - a.ram_gb);
+            } else {
+                // Sort by RAM (ascending) to find the closest match
+                candidates.sort((a, b) => a.ram_gb - b.ram_gb);
+            }
+
+            // From the closest RAM matches, prefer CPU cores match if available
+            const exactCpuMatch = candidates.filter(s => s.cpu_cores === cpu_cores);
+            if (exactCpuMatch.length > 0) {
+                return exactCpuMatch[0];
+            }
+
+            // Otherwise, prefer slightly more CPU cores rather than less
+            const moreCpu = candidates.filter(s => s.cpu_cores >= cpu_cores);
+            if (moreCpu.length > 0) {
+                return moreCpu.sort((a, b) => a.cpu_cores - b.cpu_cores)[0];
+            }
+
+            return candidates[0];
+        }
+
+        // Calculate percentage savings compared to Cloud
+        function calculateCloudSavings(auctionPrice, cloudPrice) {
+            if (!cloudPrice || cloudPrice <= 0) return null;
+            const savings = ((cloudPrice - auctionPrice) / cloudPrice) * 100;
+            return Math.max(0, savings).toFixed(0);
+        }
+
+        // Starter configs data (in production, this would be loaded from starter-configs.json)
+        const starterConfigs = {
+            "presets": [
+                {
+                    "id": "budget-web-server",
+                    "name": "Budget Web Server",
+                    "description": "Affordable option for hosting web applications and light workloads",
+                    "icon": "🌐",
+                    "filters": {
+                        "price_effective_monthly_max": 30,
+                        "ram_gb_min": 16,
+                        "cpu_family_preference": "any",
+                        "disk_type": "any",
+                        "benchmark_matched_only": true
+                    },
+                    "sort": "price_per_benchmark_point_multi",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "home-nas",
+                    "name": "Home NAS",
+                    "description": "High storage capacity for file server, backup, or media storage",
+                    "icon": "💾",
+                    "filters": {
+                        "price_effective_monthly_max": 50,
+                        "ram_gb_min": 8,
+                        "disk_type": "hdd",
+                        "disk_size_tb_min": 4,
+                        "cpu_family_preference": "any",
+                        "benchmark_matched_only": false
+                    },
+                    "sort": "price_per_tb_disk",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "game-server",
+                    "name": "Game Server",
+                    "description": "High single-thread performance for game hosting and latency-sensitive workloads",
+                    "icon": "🎮",
+                    "filters": {
+                        "price_effective_monthly_max": 60,
+                        "ram_gb_min": 32,
+                        "cpu_family_preference": "ryzen",
+                        "disk_type": "nvme",
+                        "benchmark_matched_only": true
+                    },
+                    "sort": "price_per_benchmark_point_single",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "compute-intensive",
+                    "name": "Compute Intensive",
+                    "description": "Maximum multi-thread performance for rendering, scientific computing, or batch processing",
+                    "icon": "⚡",
+                    "filters": {
+                        "price_effective_monthly_max": 80,
+                        "ram_gb_min": 64,
+                        "cpu_family_preference": "any",
+                        "disk_type": "any",
+                        "benchmark_matched_only": true
+                    },
+                    "sort": "price_per_benchmark_point_multi",
+                    "sort_direction": "asc"
+                },
+                {
+                    "id": "storage-focused",
+                    "name": "Storage Focused",
+                    "description": "Best value per terabyte for bulk storage, backups, or archives",
+                    "icon": "📦",
+                    "filters": {
+                        "price_effective_monthly_max": 40,
+                        "ram_gb_min": 16,
+                        "disk_type": "hdd",
+                        "disk_size_tb_min": 2,
+                        "cpu_family_preference": "any",
+                        "benchmark_matched_only": false
+                    },
+                    "sort": "price_per_tb_disk",
+                    "sort_direction": "asc"
+                }
+            ]
+        };
+
+        // Mock listings data (fallback when real data loading fails)
+        const mockListings = [
+            {
+                id: 1,
+                cpu_model: "Ryzen 9 5950X",
+                cpu_cores: 16,
+                ram_gb: 128,
+                disks: [{ type: "nvme", size_tb: 2 }],
+                price_effective_monthly: 45.99,
+                benchmark_multi: 51234,
+                benchmark_single: 4287,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00090,
+                price_per_benchmark_point_single: 0.01073,
+                price_per_gb_ram: 0.36,
+                price_per_tb_disk: 22.99,
+                location: "fsn",
+                uplink_speed: 1000,
+                ecc_memory: false
+            },
+            {
+                id: 2,
+                cpu_model: "Xeon E5-2680 v4",
+                cpu_cores: 14,
+                ram_gb: 64,
+                disks: [{ type: "hdd", size_tb: 4 }],
+                price_effective_monthly: 28.50,
+                benchmark_multi: 18907,
+                benchmark_single: 2134,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00151,
+                price_per_benchmark_point_single: 0.01335,
+                price_per_gb_ram: 0.45,
+                price_per_tb_disk: 7.13,
+                location: "nbg",
+                uplink_speed: 1000,
+                ecc_memory: true
+            },
+            {
+                id: 3,
+                cpu_model: "Core i7-12700",
+                cpu_cores: 12,
+                ram_gb: 32,
+                disks: [{ type: "nvme", size_tb: 1 }],
+                price_effective_monthly: 22.75,
+                benchmark_multi: 24843,
+                benchmark_single: 3891,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00092,
+                price_per_benchmark_point_single: 0.00585,
+                price_per_gb_ram: 0.71,
+                price_per_tb_disk: 22.75,
+                location: "hel",
+                uplink_speed: 100,
+                ecc_memory: false
+            },
+            {
+                id: 4,
+                cpu_model: "Ryzen 7 5800X",
+                cpu_cores: 8,
+                ram_gb: 64,
+                disks: [{ type: "nvme", size_tb: 1 }],
+                price_effective_monthly: 38.25,
+                benchmark_multi: 28756,
+                benchmark_single: 3782,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00133,
+                price_per_benchmark_point_single: 0.01012,
+                price_per_gb_ram: 0.60,
+                price_per_tb_disk: 38.25,
+                location: "fsn",
+                uplink_speed: 1000,
+                ecc_memory: false
+            },
+            {
+                id: 5,
+                cpu_model: "Unknown CPU Model X",
+                cpu_cores: 8,
+                ram_gb: 32,
+                disks: [{ type: "ssd", size_tb: 1 }],
+                price_effective_monthly: 18.00,
+                benchmark_multi: null,
+                benchmark_single: null,
+                benchmark_matched: false,
+                price_per_benchmark_point_multi: null,
+                price_per_benchmark_point_single: null,
+                price_per_gb_ram: 0.56,
+                price_per_tb_disk: 18.00,
+                location: "nbg",
+                uplink_speed: 100,
+                ecc_memory: false
+            },
+            {
+                id: 6,
+                cpu_model: "Xeon E5-2690 v4",
+                cpu_cores: 28,
+                ram_gb: 128,
+                disks: [{ type: "nvme", size_tb: 2 }],
+                price_effective_monthly: 52.00,
+                benchmark_multi: 34521,
+                benchmark_single: 2589,
+                benchmark_matched: true,
+                price_per_benchmark_point_multi: 0.00151,
+                price_per_benchmark_point_single: 0.02009,
+                price_per_gb_ram: 0.41,
+                price_per_tb_disk: 26.00,
+                location: "hel",
+                uplink_speed: 1000,
+                ecc_memory: true
+            }
+        ];
+
+        let currentPreset = null;
+        let userSortAxis = 'auto'; // 'auto' means use preset's default, otherwise specific sort field
+        let bestDealMode = false; // Track if we're showing only the best deal
+        let isInitializingFromURL = false; // Track if we're currently initializing from URL
+
+        // Serialize current filter state to URL query params
+        function serializeFiltersToURL() {
+            const params = new URLSearchParams();
+
+            // Serialize preset if active
+            if (currentPreset) {
+                params.set('preset', currentPreset.id);
+            }
+
+            // Serialize user sort axis
+            if (userSortAxis !== 'auto') {
+                params.set('sort', userSortAxis);
+            }
+
+            // Serialize individual filter values
+            const cpuFamily = document.getElementById('cpu-family').value;
+            if (cpuFamily) params.set('cpu_family', cpuFamily);
+
+            const minRam = document.getElementById('min-ram').value;
+            if (minRam && parseInt(minRam) > 0) params.set('min_ram', minRam);
+
+            const maxPrice = document.getElementById('max-price').value;
+            if (maxPrice) params.set('max_price', maxPrice);
+
+            const diskType = document.getElementById('disk-type').value;
+            if (diskType) params.set('disk_type', diskType);
+
+            const minDisk = document.getElementById('min-disk').value;
+            if (minDisk && parseFloat(minDisk) > 0) params.set('min_disk', minDisk);
+
+            const location = document.getElementById('location').value;
+            if (location) params.set('location', location);
+
+            const minUplink = document.getElementById('min-uplink').value;
+            if (minUplink && parseInt(minUplink) > 0) params.set('min_uplink', minUplink);
+
+            const cpuModel = document.getElementById('cpu-model').value;
+            if (cpuModel) params.set('cpu_model', cpuModel);
+
+            const eccMemory = document.getElementById('ecc-memory').checked;
+            if (eccMemory) params.set('ecc_memory', 'true');
+
+            const benchmarkMatchedOnly = document.getElementById('benchmark-matched-only').checked;
+            if (benchmarkMatchedOnly) params.set('benchmark_matched_only', 'true');
+
+            // Serialize best deal mode
+            if (bestDealMode) params.set('best_deal', 'true');
+
+            // Update URL without reloading page
+            const newURL = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+            window.history.pushState({ path: newURL }, '', newURL);
+        }
+
+        // Restore filter state from URL query params
+        function restoreFiltersFromURL() {
+            const params = new URLSearchParams(window.location.search);
+
+            // Check if there are any filter parameters
+            const hasFilters = params.has('preset') ||
+                              params.has('sort') ||
+                              params.has('cpu_family') ||
+                              params.has('min_ram') ||
+                              params.has('max_price') ||
+                              params.has('disk_type') ||
+                              params.has('min_disk') ||
+                              params.has('location') ||
+                              params.has('min_uplink') ||
+                              params.has('cpu_model') ||
+                              params.has('ecc_memory') ||
+                              params.has('benchmark_matched_only') ||
+                              params.has('best_deal');
+
+            if (!hasFilters) {
+                return false; // No filters to restore
+            }
+
+            isInitializingFromURL = true; // Set flag to prevent URL updates during restoration
+
+            try {
+                // Restore best deal mode if present
+                if (params.get('best_deal') === 'true') {
+                    bestDealMode = true;
+                    // Update UI for best deal mode
+                    const button = document.getElementById('best-deal-now');
+                    const description = document.getElementById('best-deal-description');
+                    button.classList.add('active');
+                    button.innerHTML = `
+                        <span class="best-deal-icon">✓</span>
+                        <span>Show All Results</span>
+                    `;
+                }
+
+                // Restore user sort axis if present
+                if (params.has('sort')) {
+                    userSortAxis = params.get('sort');
+                    document.getElementById('sort-axis').value = userSortAxis;
+                }
+
+                // Check if preset is specified
+                if (params.has('preset')) {
+                    const presetId = params.get('preset');
+                    const preset = starterConfigs.presets.find(p => p.id === presetId);
+
+                    if (preset) {
+                        // Apply the preset
+                        currentPreset = preset;
+
+                        // Update active state
+                        document.querySelectorAll('.config-preset').forEach(el => {
+                            el.classList.toggle('active', el.dataset.presetId === preset.id);
+                        });
+
+                        // Apply preset filters
+                        const filters = preset.filters;
+
+                        // CPU family
+                        const cpuFamilySelect = document.getElementById('cpu-family');
+                        if (filters.cpu_family_preference && filters.cpu_family_preference !== 'any') {
+                            cpuFamilySelect.value = filters.cpu_family_preference;
+                        } else {
+                            cpuFamilySelect.value = '';
+                        }
+
+                        // RAM
+                        document.getElementById('min-ram').value = filters.ram_gb_min || 0;
+
+                        // Price
+                        if (filters.price_effective_monthly_max) {
+                            document.getElementById('max-price').value = filters.price_effective_monthly_max;
+                        } else {
+                            document.getElementById('max-price').value = '';
+                        }
+
+                        // Disk type
+                        const diskTypeSelect = document.getElementById('disk-type');
+                        if (filters.disk_type && filters.disk_type !== 'any') {
+                            diskTypeSelect.value = filters.disk_type;
+                        } else {
+                            diskTypeSelect.value = '';
+                        }
+
+                        // Disk size
+                        document.getElementById('min-disk').value = filters.disk_size_tb_min || 0;
+
+                        // Benchmark matched only
+                        document.getElementById('benchmark-matched-only').checked = filters.benchmark_matched_only || false;
+
+                        // Location if in URL
+                        if (params.has('location')) {
+                            document.getElementById('location').value = params.get('location');
+                        }
+
+                        // Apply filtering and sorting
+                        filterAndSortListings(preset.sort, preset.sort_direction);
+
+                        isInitializingFromURL = false;
+                        return true;
+                    }
+                }
+
+                // If no preset or preset not found, restore individual filter values
+                if (params.has('cpu_family')) {
+                    document.getElementById('cpu-family').value = params.get('cpu_family');
+                }
+
+                if (params.has('min_ram')) {
+                    document.getElementById('min-ram').value = params.get('min_ram');
+                }
+
+                if (params.has('max_price')) {
+                    document.getElementById('max-price').value = params.get('max_price');
+                }
+
+                if (params.has('disk_type')) {
+                    document.getElementById('disk-type').value = params.get('disk_type');
+                }
+
+                if (params.has('min_disk')) {
+                    document.getElementById('min-disk').value = params.get('min_disk');
+                }
+
+                if (params.has('location')) {
+                    document.getElementById('location').value = params.get('location');
+                }
+
+                if (params.has('min_uplink')) {
+                    document.getElementById('min-uplink').value = params.get('min_uplink');
+                }
+
+                if (params.has('cpu_model')) {
+                    document.getElementById('cpu-model').value = params.get('cpu_model');
+                }
+
+                if (params.has('ecc_memory')) {
+                    document.getElementById('ecc-memory').checked = params.get('ecc_memory') === 'true';
+                }
+
+                if (params.has('benchmark_matched_only')) {
+                    document.getElementById('benchmark-matched-only').checked = params.get('benchmark_matched_only') === 'true';
+                }
+
+                // Apply filtering and sorting
+                filterAndSortListings();
+
+                // Handle best deal mode
+                if (bestDealMode) {
+                    const bestDeal = findBestDeal();
+                    if (bestDeal) {
+                        displayListings([bestDeal]);
+                        document.getElementById('results-count').textContent = '1 (Best Deal)';
+                        document.getElementById('current-sort').textContent = 'Best Value (multi-thread)';
+                        const description = document.getElementById('best-deal-description');
+                        description.textContent = `Showing the single best-value server: ${bestDeal.cpu_model} at €${bestDeal.price_effective_monthly.toFixed(2)}/month`;
+                    }
+                }
+
+            } finally {
+                isInitializingFromURL = false;
+                // Replace history to prevent going back to the same URL
+                window.history.replaceState({}, '', window.location.pathname + window.location.search);
+            }
+
+            return true;
+        }
+
+        // Find the single best-value listing (highest price_per_benchmark_point_multi among benchmark_matched=true)
+        function findBestDeal() {
+            const benchmarkMatchedListings = mockListings.filter(listing =>
+                listing.benchmark_matched === true &&
+                listing.price_per_benchmark_point_multi !== null
+            );
+
+            if (benchmarkMatchedListings.length === 0) {
+                return null;
+            }
+
+            // Sort by price_per_benchmark_point_multi ascending (lowest price per benchmark point = best value)
+            benchmarkMatchedListings.sort((a, b) =>
+                a.price_per_benchmark_point_multi - b.price_per_benchmark_point_multi
+            );
+
+            return benchmarkMatchedListings[0]; // Return the best deal
+        }
+
+        // Toggle best deal mode
+        function toggleBestDealMode() {
+            const button = document.getElementById('best-deal-now');
+            const description = document.getElementById('best-deal-description');
+
+            if (bestDealMode) {
+                // Exit best deal mode - restore previous view
+                bestDealMode = false;
+                button.classList.remove('active');
+                button.innerHTML = `
+                    <span class="best-deal-icon">⚡</span>
+                    <span>Best Deal Now</span>
+                `;
+                description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
+
+                // Restore normal filtering
+                filterAndSortListings();
+            } else {
+                // Enter best deal mode
+                const bestDeal = findBestDeal();
+
+                if (!bestDeal) {
+                    description.textContent = 'No benchmark-matched listings available. Try adjusting your filters.';
+                    return;
+                }
+
+                bestDealMode = true;
+                button.classList.add('active');
+                button.innerHTML = `
+                    <span class="best-deal-icon">✓</span>
+                    <span>Show All Results</span>
+                `;
+                description.textContent = `Showing the single best-value server: ${bestDeal.cpu_model} at €${bestDeal.price_effective_monthly.toFixed(2)}/month`;
+
+                // Display only the best deal
+                displayListings([bestDeal]);
+                document.getElementById('results-count').textContent = '1 (Best Deal)';
+                document.getElementById('current-sort').textContent = 'Best Value (multi-thread)';
+            }
+
+            // Serialize to URL for bookmarking
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
+        }
+
+        // Initialize starter configs UI
+        function initStarterConfigs() {
+            const container = document.getElementById('starter-configs-grid');
+
+            starterConfigs.presets.forEach(preset => {
+                const presetElement = document.createElement('div');
+                presetElement.className = 'config-preset';
+                presetElement.dataset.presetId = preset.id;
+                presetElement.innerHTML = `
+                    <div class="config-icon">${preset.icon}</div>
+                    <div class="config-name">${preset.name}</div>
+                    <div class="config-description">${preset.description}</div>
+                `;
+
+                presetElement.addEventListener('click', () => applyPreset(preset));
+                container.appendChild(presetElement);
+            });
+        }
+
+        // Apply a preset configuration
+        function applyPreset(preset) {
+            currentPreset = preset;
+            userSortAxis = 'auto'; // Reset to auto when applying preset
+
+            // Update active state
+            document.querySelectorAll('.config-preset').forEach(el => {
+                el.classList.toggle('active', el.dataset.presetId === preset.id);
+            });
+
+            // Apply filters
+            const filters = preset.filters;
+
+            // CPU family
+            const cpuFamilySelect = document.getElementById('cpu-family');
+            if (filters.cpu_family_preference && filters.cpu_family_preference !== 'any') {
+                cpuFamilySelect.value = filters.cpu_family_preference;
+            } else {
+                cpuFamilySelect.value = '';
+            }
+
+            // RAM
+            document.getElementById('min-ram').value = filters.ram_gb_min || 0;
+
+            // Price
+            if (filters.price_effective_monthly_max) {
+                document.getElementById('max-price').value = filters.price_effective_monthly_max;
+            } else {
+                document.getElementById('max-price').value = '';
+            }
+
+            // Disk type
+            const diskTypeSelect = document.getElementById('disk-type');
+            if (filters.disk_type && filters.disk_type !== 'any') {
+                diskTypeSelect.value = filters.disk_type;
+            } else {
+                diskTypeSelect.value = '';
+            }
+
+            // Disk size
+            document.getElementById('min-disk').value = filters.disk_size_tb_min || 0;
+
+            // Benchmark matched only
+            document.getElementById('benchmark-matched-only').checked = filters.benchmark_matched_only || false;
+
+            // Apply filtering and sorting
+            filterAndSortListings(preset.sort, preset.sort_direction);
+
+            // Serialize to URL for bookmarking
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
+        }
+
+        // Reset filters to default state
+        function resetFilters() {
+            currentPreset = null;
+            userSortAxis = 'auto'; // Reset to auto when resetting filters
+
+            // Remove active state from all presets
+            document.querySelectorAll('.config-preset').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Reset all filter inputs
+            document.getElementById('cpu-family').value = '';
+            document.getElementById('cpu-model').value = '';
+            document.getElementById('min-ram').value = 0;
+            document.getElementById('max-price').value = '';
+            document.getElementById('disk-type').value = '';
+            document.getElementById('min-disk').value = 0;
+            document.getElementById('location').value = '';
+            document.getElementById('min-uplink').value = 0;
+            document.getElementById('ecc-memory').checked = false;
+            document.getElementById('benchmark-matched-only').checked = false;
+            document.getElementById('sort-axis').value = 'auto';
+
+            // Reset to default sort
+            filterAndSortListings('price_per_benchmark_point_multi', 'asc');
+
+            // Serialize to URL for bookmarking (this will clear the URL)
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
+        }
+
+        // Filter and sort listings based on current filters
+        function filterAndSortListings(presetSortBy = 'price_per_benchmark_point_multi', sortDirection = 'asc') {
+            // Determine effective sort method based on user selection
+            let sortBy = presetSortBy;
+            if (userSortAxis !== 'auto') {
+                sortBy = userSortAxis;
+            }
+            const filters = {
+                cpu_family: document.getElementById('cpu-family').value,
+                cpu_model: document.getElementById('cpu-model').value.trim().toLowerCase(),
+                min_ram: parseInt(document.getElementById('min-ram').value) || 0,
+                max_price: parseFloat(document.getElementById('max-price').value) || null,
+                disk_type: document.getElementById('disk-type').value,
+                min_disk: parseFloat(document.getElementById('min-disk').value) || 0,
+                location: document.getElementById('location').value,
+                min_uplink: parseInt(document.getElementById('min-uplink').value) || 0,
+                ecc_memory_only: document.getElementById('ecc-memory').checked,
+                benchmark_matched_only: document.getElementById('benchmark-matched-only').checked
+            };
+
+            // Filter listings
+            let filtered = mockListings.filter(listing => {
+                // CPU family filter
+                if (filters.cpu_family) {
+                    const cpuLower = listing.cpu_model.toLowerCase();
+                    if (filters.cpu_family === 'ryzen' && !cpuLower.includes('ryzen')) return false;
+                    if (filters.cpu_family === 'xeon' && !cpuLower.includes('xeon')) return false;
+                    if (filters.cpu_family === 'core' && !cpuLower.includes('core')) return false;
+                }
+
+                // CPU model filter (case-insensitive substring match)
+                if (filters.cpu_model && !listing.cpu_model.toLowerCase().includes(filters.cpu_model)) return false;
+
+                // RAM filter
+                if (listing.ram_gb < filters.min_ram) return false;
+
+                // Price filter
+                if (filters.max_price && listing.price_effective_monthly > filters.max_price) return false;
+
+                // Disk type filter
+                if (filters.disk_type) {
+                    const hasDiskType = listing.disks.some(disk => disk.type === filters.disk_type);
+                    if (!hasDiskType) return false;
+                }
+
+                // Disk size filter
+                const totalDiskSize = listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
+                if (totalDiskSize < filters.min_disk) return false;
+
+                // Location filter
+                if (filters.location && listing.location !== filters.location) return false;
+
+                // Uplink speed filter
+                if (filters.min_uplink > 0) {
+                    if (!listing.uplink_speed || listing.uplink_speed < filters.min_uplink) return false;
+                }
+
+                // ECC memory filter
+                if (filters.ecc_memory_only && !listing.ecc_memory) return false;
+
+                // Benchmark matched filter
+                if (filters.benchmark_matched_only && !listing.benchmark_matched) return false;
+
+                return true;
+            });
+
+            // Sort listings
+            filtered.sort((a, b) => {
+                let comparison = 0;
+
+                switch (sortBy) {
+                    case 'price_per_benchmark_point_multi':
+                        if (a.price_per_benchmark_point_multi === null) comparison = -1;
+                        else if (b.price_per_benchmark_point_multi === null) comparison = 1;
+                        else comparison = a.price_per_benchmark_point_multi - b.price_per_benchmark_point_multi;
+                        break;
+                    case 'price_per_benchmark_point_single':
+                        // NULLS FIRST: unscored listings appear at the top
+                        if (a.price_per_benchmark_point_single === null && b.price_per_benchmark_point_single === null) comparison = 0;
+                        else if (a.price_per_benchmark_point_single === null) comparison = -1;
+                        else if (b.price_per_benchmark_point_single === null) comparison = 1;
+                        else comparison = a.price_per_benchmark_point_single - b.price_per_benchmark_point_single;
+                        break;
+                    case 'price_per_gb_ram':
+                        comparison = a.price_per_gb_ram - b.price_per_gb_ram;
+                        break;
+                    case 'price_per_tb_disk':
+                        comparison = a.price_per_tb_disk - b.price_per_tb_disk;
+                        break;
+                    default:
+                        comparison = a.price_effective_monthly - b.price_effective_monthly;
+                }
+
+                return sortDirection === 'asc' ? comparison : -comparison;
+            });
+
+            // Update UI
+            displayListings(filtered);
+            updateSortLabel(sortBy);
+        }
+
+        // Display listings in the UI
+        function displayListings(listings) {
+            const container = document.getElementById('listings-container');
+            const countEl = document.getElementById('results-count');
+
+            countEl.textContent = listings.length;
+            container.innerHTML = '';
+
+            if (listings.length === 0) {
+                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No listings match your filters. Try adjusting your criteria.</div>';
+                return;
+            }
+
+            listings.forEach(listing => {
+                const totalDiskSize = listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
+                const diskTypes = listing.disks.map(d => {
+                    const typeLabels = { nvme: 'NVMe', ssd: 'SATA SSD', hdd: 'HDD' };
+                    return typeLabels[d.type] || d.type.toUpperCase();
+                }).join(', ');
+
+                // Find equivalent Cloud instance and calculate savings
+                const cloudEquivalent = findEquivalentCloudInstance(listing.ram_gb, listing.cpu_cores || 0);
+                const cloudSavings = cloudEquivalent
+                    ? calculateCloudSavings(listing.price_effective_monthly, cloudEquivalent.price_monthly)
+                    : null;
+
+                const listingElement = document.createElement('div');
+                listingElement.className = 'listing';
+
+                const unscoredBadge = listing.benchmark_matched ? '' : '<span class="unscored-badge">Unscored</span>';
+
+                // Cloud comparison badge
+                let cloudBadge = '';
+                if (cloudSavings !== null) {
+                    const cloudClass = parseFloat(cloudSavings) > 0 ? 'cloud-comparison' : 'cloud-comparison unavailable';
+                    const cloudText = parseFloat(cloudSavings) > 0
+                        ? `${cloudSavings}% cheaper than Hetzner Cloud ${cloudEquivalent.name}`
+                        : `Similar price to Hetzner Cloud ${cloudEquivalent.name}`;
+                    cloudBadge = `<span class="${cloudClass}">${cloudText}</span>`;
+                }
+
+                const benchmarkMultiClass = listing.price_per_benchmark_point_multi !== null ? 'good' : 'unscored';
+                const benchmarkSingleClass = listing.price_per_benchmark_point_single !== null ? 'good' : 'unscored';
+
+                listingElement.innerHTML = `
+                    <div class="listing-header">
+                        <div class="listing-title">
+                            <h3>${listing.cpu_model} ${unscoredBadge}</h3>
+                            <div class="listing-specs">
+                                ${listing.ram_gb}GB RAM ${listing.ecc_memory ? '(ECC)' : ''} • ${totalDiskSize}TB ${diskTypes} • ${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'} • ${getLocationLabel(listing.location)}
+                            </div>
+                            ${cloudBadge}
+                        </div>
+                        <div class="listing-price">
+                            <div class="price">€${listing.price_effective_monthly.toFixed(2)}</div>
+                            <div class="price-period">per month</div>
+                        </div>
+                    </div>
+                    <div class="listing-metrics">
+                        <div class="metric">
+                            <div class="metric-label">€/Benchmark (Multi)</div>
+                            <div class="metric-value ${benchmarkMultiClass}">
+                                ${listing.price_per_benchmark_point_multi !== null
+                                    ? listing.price_per_benchmark_point_multi.toFixed(5)
+                                    : 'N/A'}
+                            </div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">€/Benchmark (Single)</div>
+                            <div class="metric-value ${benchmarkSingleClass}">
+                                ${listing.price_per_benchmark_point_single !== null
+                                    ? listing.price_per_benchmark_point_single.toFixed(5)
+                                    : 'N/A'}
+                            </div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">€/GB RAM</div>
+                            <div class="metric-value">€${listing.price_per_gb_ram.toFixed(2)}</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">€/TB Disk</div>
+                            <div class="metric-value">€${listing.price_per_tb_disk.toFixed(2)}</div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(listingElement);
+            });
+        }
+
+        // Get location label
+        function getLocationLabel(location) {
+            const labels = {
+                fsn: 'Falkenstein',
+                nbg: 'Nuremberg',
+                hel: 'Helsinki',
+                ash: 'Ashburn, VA'
+            };
+            return labels[location] || location.toUpperCase();
+        }
+
+        // Update sort label
+        function updateSortLabel(sortBy) {
+            // If user has overridden sort, show that
+            if (userSortAxis !== 'auto') {
+                sortBy = userSortAxis;
+            }
+
+            const labels = {
+                price_per_benchmark_point_multi: 'Value (multi-thread)',
+                price_per_benchmark_point_single: 'Value (single-thread)',
+                price_per_gb_ram: 'Value per GB RAM',
+                price_per_tb_disk: 'Value per TB disk'
+            };
+            document.getElementById('current-sort').textContent = labels[sortBy] || sortBy;
+        }
+
+        // Update staleness indicator
+        function updateStaleness() {
+            const stalenessEl = document.getElementById('last-updated');
+
+            if (dataFetchedAt) {
+                // Calculate how old the data is
+                const now = new Date();
+                const fetchedDate = new Date(dataFetchedAt);
+                const ageMs = now - fetchedDate;
+                const ageMinutes = Math.floor(ageMs / 60000);
+                const ageHours = Math.floor(ageMinutes / 60);
+
+                // Format the timestamp
+                const timeString = fetchedDate.toLocaleString();
+
+                // Create staleness message with visual indicator
+                let stalenessMessage = timeString;
+                let stalenessClass = '';
+
+                if (ageMinutes < 15) {
+                    stalenessMessage += ' (✓ Fresh)';
+                    stalenessClass = 'fresh';
+                } else if (ageMinutes < 60) {
+                    stalenessMessage += ` (${ageMinutes}m old)`;
+                    stalenessClass = 'moderate';
+                } else if (ageHours < 24) {
+                    stalenessMessage += ` (${ageHours}h old)`;
+                    stalenessClass = 'stale';
+                } else {
+                    stalenessMessage += ` (${Math.floor(ageHours / 24)}d old)`;
+                    stalenessClass = 'very-stale';
+                }
+
+                stalenessEl.textContent = stalenessMessage;
+                stalenessEl.className = stalenessClass;
+            } else {
+                // No data timestamp available
+                stalenessEl.textContent = 'Unknown timestamp';
+                stalenessEl.className = '';
+            }
+
+            // Update refresh countdown
+            updateRefreshCountdown();
+        }
+
+        // Update the refresh countdown indicator
+        function updateRefreshCountdown() {
+            const refreshEl = document.getElementById('next-refresh');
+
+            if (lastRefreshTime) {
+                const now = new Date();
+                const nextRefresh = new Date(lastRefreshTime.getTime() + REFRESH_INTERVAL_MS);
+                const timeUntilRefresh = nextRefresh - now;
+
+                if (timeUntilRefresh > 0) {
+                    const minutes = Math.floor(timeUntilRefresh / 60000);
+                    const seconds = Math.floor((timeUntilRefresh % 60000) / 1000);
+
+                    if (minutes > 0) {
+                        refreshEl.textContent = `${minutes}m ${seconds}s`;
+                    } else {
+                        refreshEl.textContent = `${seconds}s`;
+                    }
+                } else {
+                    refreshEl.textContent = 'Refreshing...';
+                }
+            } else {
+                refreshEl.textContent = 'Initializing...';
+            }
+        }
+
+        // Event listeners for manual filter changes
+        const filterInputs = [
+            'cpu-family', 'cpu-model', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'min-uplink', 'ecc-memory', 'benchmark-matched-only'
+        ];
+
+        filterInputs.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('change', () => {
+                    // Exit best deal mode when filters are manually changed
+                    if (bestDealMode) {
+                        bestDealMode = false;
+                        const button = document.getElementById('best-deal-now');
+                        const description = document.getElementById('best-deal-description');
+                        button.classList.remove('active');
+                        button.innerHTML = `
+                            <span class="best-deal-icon">⚡</span>
+                            <span>Best Deal Now</span>
+                        `;
+                        description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
+                    }
+                    // Clear preset selection when filters are manually changed
+                    if (currentPreset) {
+                        currentPreset = null;
+                        document.querySelectorAll('.config-preset').forEach(el => {
+                            el.classList.remove('active');
+                        });
+                    }
+                    filterAndSortListings();
+                    // Serialize to URL for bookmarking
+                    if (!isInitializingFromURL) {
+                        serializeFiltersToURL();
+                    }
+                });
+            }
+        });
+
+        // Reset button
+        document.getElementById('reset-filters').addEventListener('click', resetFilters);
+
+        // Best Deal Now button
+        document.getElementById('best-deal-now').addEventListener('click', toggleBestDealMode);
+
+        // Sort axis selector
+        document.getElementById('sort-axis').addEventListener('change', (e) => {
+            userSortAxis = e.target.value;
+            // Exit best deal mode when user changes sort axis
+            if (bestDealMode) {
+                bestDealMode = false;
+                const button = document.getElementById('best-deal-now');
+                const description = document.getElementById('best-deal-description');
+                button.classList.remove('active');
+                button.innerHTML = `
+                    <span class="best-deal-icon">⚡</span>
+                    <span>Best Deal Now</span>
+                `;
+                description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
+            }
+            // Clear preset selection when user manually chooses sort axis
+            if (currentPreset) {
+                currentPreset = null;
+                document.querySelectorAll('.config-preset').forEach(el => {
+                    el.classList.remove('active');
+                });
+            }
+            updateSortDescription();
+            filterAndSortListings();
+            // Serialize to URL for bookmarking
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
+        });
+
+        // Update sort description based on current selection
+        function updateSortDescription() {
+            const descriptions = {
+                'auto': 'The default sort method prioritizes overall value (price per benchmark point). Choose a different primary axis to optimize for RAM-heavy or storage-heavy workloads.',
+                'price_per_benchmark_point_multi': 'Sorts by price per multi-thread benchmark point. Best for most workloads where multi-core performance matters.',
+                'price_per_benchmark_point_single': 'Sorts by price per single-thread benchmark point. Best for latency-sensitive or single-threaded applications.',
+                'price_per_gb_ram': 'Sorts by price per GB of RAM. Best for in-memory caching, databases, or RAM-intensive workloads.',
+                'price_per_tb_disk': 'Sorts by price per TB of disk storage. Best for file servers, backups, or storage-intensive applications.'
+            };
+            document.getElementById('sort-description').textContent = descriptions[userSortAxis] || descriptions['auto'];
+        }
+
+        // Error state display functions
+        function showErrorState(errorType, details = {}) {
+            const container = document.getElementById('error-container');
+            const listingsContainer = document.getElementById('listings-container');
+            const loadingContainer = document.getElementById('loading-container');
+
+            // Clear loading state
+            loadingContainer.innerHTML = '';
+
+            // Hide listings when showing error
+            listingsContainer.style.display = 'none';
+
+            currentErrorState = errorType;
+
+            const errorStates = {
+                'duckdb-load-failed': {
+                    title: '⚠️ Database Loading Failed',
+                    message: 'Unable to load the in-browser database (DuckDB-WASM). This may be due to network restrictions or browser compatibility.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li><strong>Network blocked:</strong> Your browser or network may be blocking access to DuckDB-WASM from CDN. Check if content blockers or corporate firewalls are preventing WASM file downloads.</li>
+                            <li><strong>Browser compatibility:</strong> Your browser may not support WebAssembly. Try using a modern browser (Chrome 90+, Firefox 88+, Safari 14.1+).</li>
+                            <li><strong>CDN unavailable:</strong> The DuckDB-WASM CDN service may be temporarily unavailable. Try refreshing the page.</li>
+                            <li><strong>Memory limit:</strong> DuckDB-WASM may exceed your browser's memory allocation.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Error: <code>${details.error || 'Unknown error loading DuckDB-WASM'}</code></li>
+                            <li>WASM URL: <code>${details.wasmUrl || 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm'}</code></li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading Database'
+                },
+                'parquet-fetch-failed': {
+                    title: '📄 Data Loading Failed',
+                    message: 'Unable to load the auction data from Parquet files. The data source may be unavailable or inaccessible.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li><strong>Network unavailable:</strong> Cannot reach the Parquet data source. Check your internet connection.</li>
+                            <li><strong>CORS restrictions:</strong> Cross-Origin Resource Sharing may be blocking the request. The data server may need to allow access from this domain.</li>
+                            <li><strong>Data source offline:</strong> The Parquet file hosting service (R2 bucket, CDN) may be temporarily unavailable.</li>
+                            <li><strong>Invalid URL:</strong> The Parquet file URL may be incorrect or the file may have been moved.</li>
+                            <li><strong>File format error:</strong> The Parquet file may be corrupted or in an incompatible format.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Error: <code>${details.error || 'Failed to fetch Parquet data'}</code></li>
+                            <li>Attempted URL: <code>${details.url || 'Parquet data source'}</code></li>
+                            <li>HTTP Status: <code>${details.httpStatus || 'Unknown'}</code></li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading Data'
+                },
+                'both-failed': {
+                    title: '❌ System Initialization Failed',
+                    message: 'Both the database engine and data loading failed. The dashboard cannot function without these components.',
+                    details: `
+                        <h4>Multiple Failures Detected:</h4>
+                        <ul>
+                            <li><strong>Database engine:</strong> Could not load DuckDB-WASM</li>
+                            <li><strong>Data source:</strong> Could not load Parquet auction data</li>
+                        </ul>
+                        <h4>This may indicate:</h4>
+                        <ul>
+                            <li>Severe network restrictions or firewall blocking external resources</li>
+                            <li>Browser compatibility issues with WebAssembly</li>
+                            <li>Complete service outage of data infrastructure</li>
+                            <li>Corrupted browser cache or extensions interfering with resource loading</li>
+                        </ul>
+                        <h4>Troubleshooting Steps:</h4>
+                        <ul>
+                            <li>Try a different browser (Chrome, Firefox, Safari)</li>
+                            <li>Disable browser extensions that might block scripts or network requests</li>
+                            <li>Check if you can access other websites</li>
+                            <li>Try incognito/private browsing mode</li>
+                            <li>Clear browser cache and reload</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Full Initialization'
+                },
+                'cors-blocked': {
+                    title: '🔒 Access Blocked by CORS Policy',
+                    message: 'Your browser is blocking access to the auction data due to Cross-Origin Resource Sharing restrictions.',
+                    details: `
+                        <h4>What is CORS?</h4>
+                        <ul>
+                            <li>CORS is a security feature that prevents websites from accessing data on other domains without permission.</li>
+                            <li>The data server needs to explicitly allow this domain to access the Parquet files.</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>For developers:</strong> Configure the data server to send appropriate CORS headers: <code>Access-Control-Allow-Origin: *</code> or specific domains.</li>
+                            <li><strong>For users:</strong> This error typically requires server-side configuration changes. Contact the service provider.</li>
+                            <li><strong>Workaround:</strong> Some browser extensions can bypass CORS for testing, but this is not recommended for security.</li>
+                        </ul>
+                        <h4>Technical Details:</h4>
+                        <ul>
+                            <li>Blocked resource: <code>${details.url || 'Parquet data file'}</code></li>
+                            <li>Request origin: <code>${window.location.origin}</code></li>
+                        </ul>
+                    `,
+                    retryable: false
+                },
+                'memory-limit': {
+                    title: '💾 Memory Limit Exceeded',
+                    message: 'The dashboard requires more browser memory than is currently available to process the auction data.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li>Browser tab memory limit reached (typically 1-4GB depending on browser)</li>
+                            <li>Other tabs consuming significant memory</li>
+                            <li>Device has insufficient available RAM</li>
+                            <li>Parquet file is very large and requires substantial memory to process</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>Close other browser tabs</strong> to free up memory</li>
+                            <li><strong>Restart your browser</strong> to clear memory leaks</li>
+                            <li><strong>Use a 64-bit browser</strong> if available (higher memory limits)</li>
+                            <li><strong>Try a different browser</strong> - some handle memory better than others</li>
+                            <li><strong>Close other applications</strong> on your computer</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry After Closing Other Tabs'
+                },
+                'timeout': {
+                    title: '⏱️ Loading Timeout',
+                    message: 'The data took too long to load and the request timed out. This may be due to slow network or large data files.',
+                    details: `
+                        <h4>Possible Causes:</h4>
+                        <ul>
+                            <li>Slow internet connection or high latency</li>
+                            <li>Large Parquet file requiring significant download time</li>
+                            <li>Server processing time for complex queries</li>
+                            <li>Network congestion or routing issues</li>
+                        </ul>
+                        <h4>Solutions:</h4>
+                        <ul>
+                            <li><strong>Check your connection speed</strong> - try running a speed test</li>
+                            <li><strong>Refresh the page</strong> - temporary network issues may resolve</li>
+                            <li><strong>Try a different network</strong> - switch between WiFi and mobile data</li>
+                            <li><strong>Try during off-peak hours</strong> - network congestion may be lower</li>
+                            <li><strong>Use a wired connection</strong> if available for more stable connectivity</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Retry Loading'
+                },
+                'unknown-error': {
+                    title: '❓ Unexpected Error',
+                    message: 'An unexpected error occurred while loading the dashboard.',
+                    details: `
+                        <h4>Error Details:</h4>
+                        <ul>
+                            <li>Error message: <code>${details.error || 'Unknown error'}</code></li>
+                            <li>Error type: <code>${details.errorType || 'Unknown'}</code></li>
+                        </ul>
+                        <h4>General Troubleshooting:</h4>
+                        <ul>
+                            <li>Refresh the page and try again</li>
+                            <li>Check your browser console for more error details (F12)</li>
+                            <li>Try a different browser</li>
+                            <li>Clear your browser cache</li>
+                            <li>If the problem persists, contact support with the error details above</li>
+                        </ul>
+                    `,
+                    retryable: true,
+                    retryAction: 'Try Again'
+                }
+            };
+
+            const errorState = errorStates[errorType] || errorStates['unknown-error'];
+
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-state-title">
+                        <span class="error-state-icon">⚠️</span>
+                        <span>${errorState.title}</span>
+                    </div>
+                    <div class="error-state-message">${errorState.message}</div>
+                    <div class="error-state-details">${errorState.details}</div>
+                    ${errorState.retryable ? `<button class="error-retry-button" onclick="${details.retryAction || 'retryDataLoad()'}">${errorState.retryAction}</button>` : ''}
+                </div>
+            `;
+
+            container.style.display = 'block';
+        }
+
+        function showLoadingState(message = 'Loading auction data...') {
+            const container = document.getElementById('loading-container');
+            const errorContainer = document.getElementById('error-container');
+
+            // Clear any existing error
+            errorContainer.innerHTML = '';
+            errorContainer.style.display = 'none';
+
+            // Show loading state
+            container.innerHTML = `
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">${message}</div>
+                </div>
+            `;
+
+            container.style.display = 'block';
+            isLoadingData = true;
+        }
+
+        function hideLoadingState() {
+            const container = document.getElementById('loading-container');
+            const listingsContainer = document.getElementById('listings-container');
+
+            container.innerHTML = '';
+            container.style.display = 'none';
+            listingsContainer.style.display = 'block';
+            isLoadingData = false;
+        }
+
+        function showFallbackMode() {
+            const container = document.getElementById('error-container');
+            const listingsContainer = document.getElementById('listings-container');
+
+            // Hide error state, show listings
+            container.innerHTML = `
+                <div class="fallback-mode">
+                    <div class="fallback-mode-title">⚠️ Using Sample Data</div>
+                    <div class="fallback-mode-text">
+                        The dashboard is currently displaying sample/mock data because the live auction data could not be loaded.
+                        This is for demonstration purposes only. The filters and sorting work, but the results are not real auction listings.
+                        ${usingFallbackData ? '<br><strong>Original error:</strong> ' + currentErrorState : ''}
+                    </div>
+                </div>
+            `;
+
+            container.style.display = 'block';
+            listingsContainer.style.display = 'block';
+            usingFallbackData = true;
+        }
+
+        function clearErrorState() {
+            const container = document.getElementById('error-container');
+            const listingsContainer = document.getElementById('listings-container');
+
+            container.innerHTML = '';
+            container.style.display = 'none';
+            listingsContainer.style.display = 'block';
+            currentErrorState = null;
+        }
+
+        // Retry function that will be called from error buttons
+        async function retryDataLoad() {
+            showLoadingState('Retrying data load...');
+            clearErrorState();
+
+            try {
+                // Retry the initialization process
+                await init();
+            } catch (error) {
+                console.error('Retry failed:', error);
+                showErrorState('unknown-error', { error: error.message });
+            }
+        }
+
+        // Make retry function globally available for onclick handlers
+        window.retryDataLoad = retryDataLoad;
+
+        // Real DuckDB-WASM and Parquet loading with error handling
+        let realListings = []; // Will store loaded data from Parquet
+        let db = null; // DuckDB instance
+
+        async function loadRealDataWithFallback() {
+            showLoadingState('Loading auction data from Parquet files...');
+
+            try {
+                // Try to load real data
+                await loadDuckDBAndParquet();
+                hideLoadingState();
+                return realListings;
+            } catch (error) {
+                console.error('Failed to load real data, falling back to mock data:', error);
+
+                // Determine error type and show appropriate error state
+                let errorType = 'unknown-error';
+                let errorDetails = { error: error.message };
+
+                if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
+                    errorType = 'timeout';
+                } else if (error.message.includes('CORS') || error.message.includes('cross-origin')) {
+                    errorType = 'cors-blocked';
+                    errorDetails.url = error.url;
+                } else if (error.message.includes('memory') || error.message.includes('Memory')) {
+                    errorType = 'memory-limit';
+                } else if (error.message.includes('DuckDB') || error.message.includes('WASM')) {
+                    errorType = 'duckdb-load-failed';
+                    duckDBLoadFailed = true;
+                } else if (error.message.includes('Parquet') || error.message.includes('fetch')) {
+                    errorType = 'parquet-fetch-failed';
+                    parquetFetchFailed = true;
+                } else if (duckDBLoadFailed && parquetFetchFailed) {
+                    errorType = 'both-failed';
+                }
+
+                // Show error state for a moment, then switch to fallback mode
+                showErrorState(errorType, errorDetails);
+
+                // Wait a moment so user sees the error, then switch to fallback mode
+                setTimeout(() => {
+                    showFallbackMode();
+                    // Initialize with mock data
+                    mockListings.length = 0; // Clear if needed
+                    mockListings.push(...getFallbackMockData());
+                }, 3000);
+
+                return mockListings;
+            }
+        }
+
+        async function loadDuckDBAndParquet() {
+            const startTime = Date.now();
+
+            try {
+                // Step 1: Load DuckDB-WASM
+                console.log('Loading DuckDB-WASM...');
+                const duckdb = await loadDuckDBWithTimeout();
+
+                // Step 2: Initialize DuckDB
+                console.log('Initializing DuckDB...');
+                const browser = new duckdb.browser('', new duckdb.consoleLogger(1));
+
+                await browser.instantiate({
+                    path: 'duckdb.wasm',
+                });
+
+                const conn = await browser.connect();
+
+                db = {
+                    query: async (queryStr) => {
+                        const result = await conn.query(queryStr);
+                        return result;
+                    }
+                };
+
+                console.log('DuckDB initialized successfully');
+
+                // Step 3: Load httpfs extension for remote Parquet access
+                console.log('Loading httpfs extension...');
+                await db.query("INSTALL httpfs");
+                await db.query("LOAD httpfs");
+                console.log('httpfs extension loaded');
+
+                // Step 4: Load Parquet data
+                console.log('Loading Parquet data...');
+                const parquetUrl = 'https://auction-data.example.com/listings.parquet'; // Replace with actual URL
+
+                await db.query(`
+                    CREATE TABLE listings AS
+                    SELECT * FROM read_parquet('${parquetUrl}')
+                `);
+
+                console.log('Parquet data loaded successfully');
+
+                // Step 5: Verify data and convert to our format
+                const countResult = await db.query("SELECT COUNT(*) as count FROM listings");
+                const count = countResult.toArray()[0].count;
+
+                if (count === 0) {
+                    throw new Error('No data found in Parquet file');
+                }
+
+                console.log(`Loaded ${count} listings from Parquet`);
+
+                // Extract fetched_at timestamp to display data staleness
+                const fetchedAtResult = await db.query('SELECT MAX(fetched_at) as latest_fetched_at FROM listings');
+                if (fetchedAtResult.toArray().length > 0) {
+                    const latestFetched = fetchedAtResult.toArray()[0].latest_fetched_at;
+                    if (latestFetched) {
+                        dataFetchedAt = new Date(latestFetched);
+                        console.log(`Data fetched at: ${dataFetchedAt.toISOString()}`);
+                    }
+                }
+
+                // Step 6: Convert DuckDB results to our listing format
+                const listingsResult = await db.query('SELECT * FROM listings LIMIT 1000'); // Limit for performance
+                realListings = convertDuckDBResultToListings(listingsResult);
+
+                console.log(`Converted ${realListings.length} listings to internal format`);
+
+                // Replace mockListings with real data
+                mockListings.length = 0;
+                mockListings.push(...realListings);
+
+                const loadTime = Date.now() - startTime;
+                console.log(`Data loading complete in ${loadTime}ms`);
+
+            } catch (error) {
+                const loadTime = Date.now() - startTime;
+                console.error(`Data loading failed after ${loadTime}ms:`, error);
+
+                // Enhance error with more context
+                if (error.message) {
+                    throw new Error(`Failed to load auction data: ${error.message}`);
+                } else {
+                    throw new Error('Failed to load auction data: Unknown error');
+                }
+            }
+        }
+
+        async function loadDuckDBWithTimeout(timeoutMs = 30000) {
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('TimeoutError: DuckDB-WASM loading timed out after ' + timeoutMs + 'ms')), timeoutMs);
+            });
+
+            try {
+                const duckdb = await Promise.race([
+                    import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm'),
+                    timeoutPromise
+                ]);
+
+                return duckdb;
+            } catch (error) {
+                if (error.message.includes('Timeout')) {
+                    throw error;
+                }
+                throw new Error(`DuckDB-WASM load failed: ${error.message}. Check your internet connection and browser compatibility.`);
+            }
+        }
+
+        function convertDuckDBResultToListings(result) {
+            const rows = result.toArray();
+            return rows.map(row => ({
+                id: row.listing_id || row.id,
+                cpu_model: row.cpu_model || row.cpu_raw || 'Unknown CPU',
+                cpu_cores: row.cpu_cores || 0,
+                ram_gb: row.ram_gb || 0,
+                disks: parseDisksFromRow(row),
+                price_effective_monthly: (row.price_effective_monthly_cents || 0) / 100.0,
+                benchmark_multi: row.benchmark_multi || null,
+                benchmark_single: row.benchmark_single || null,
+                benchmark_matched: row.benchmark_matched || false,
+                price_per_benchmark_point_multi: row.price_per_benchmark_point_multi || null,
+                price_per_benchmark_point_single: row.price_per_benchmark_point_single || null,
+                price_per_gb_ram: row.price_per_gb_ram || 0,
+                price_per_tb_disk: row.price_per_tb_disk || 0,
+                location: row.location || 'unknown',
+                uplink_speed: row.uplink_speed_mbit || 0,
+                ecc_memory: row.ecc_memory || false
+            }));
+        }
+
+        function parseDisksFromRow(row) {
+            // This would need to be adapted based on actual Parquet schema
+            if (row.disks && Array.isArray(row.disks)) {
+                return row.disks;
+            }
+
+            // Fallback: parse from individual fields if available
+            const disks = [];
+            if (row.disk_type && row.disk_size_gb) {
+                disks.push({
+                    type: row.disk_type,
+                    size_gb: row.disk_size_gb,
+                    capacity_gb: row.disk_size_gb
+                });
+            }
+
+            return disks.length > 0 ? disks : [{ type: 'nvme', size_gb: 500, capacity_gb: 500 }];
+        }
+
+        function getFallbackMockData() {
+            // Return the original mock data
+            return [
+                {
+                    id: 1,
+                    cpu_model: "Ryzen 9 5950X",
+                    cpu_cores: 16,
+                    ram_gb: 128,
+                    disks: [{ type: "nvme", size_tb: 2 }],
+                    price_effective_monthly: 45.99,
+                    benchmark_multi: 51234,
+                    benchmark_single: 4287,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00090,
+                    price_per_benchmark_point_single: 0.01073,
+                    price_per_gb_ram: 0.36,
+                    price_per_tb_disk: 22.99,
+                    location: "fsn",
+                    uplink_speed: 1000,
+                    ecc_memory: false
+                },
+                {
+                    id: 2,
+                    cpu_model: "Xeon E5-2680 v4",
+                    cpu_cores: 14,
+                    ram_gb: 64,
+                    disks: [{ type: "hdd", size_tb: 4 }],
+                    price_effective_monthly: 28.50,
+                    benchmark_multi: 18907,
+                    benchmark_single: 2134,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00151,
+                    price_per_benchmark_point_single: 0.01335,
+                    price_per_gb_ram: 0.45,
+                    price_per_tb_disk: 7.13,
+                    location: "nbg",
+                    uplink_speed: 1000,
+                    ecc_memory: true
+                },
+                {
+                    id: 3,
+                    cpu_model: "Core i7-12700",
+                    cpu_cores: 12,
+                    ram_gb: 32,
+                    disks: [{ type: "nvme", size_tb: 1 }],
+                    price_effective_monthly: 22.75,
+                    benchmark_multi: 24843,
+                    benchmark_single: 3891,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00092,
+                    price_per_benchmark_point_single: 0.00585,
+                    price_per_gb_ram: 0.71,
+                    price_per_tb_disk: 22.75,
+                    location: "hel",
+                    uplink_speed: 100,
+                    ecc_memory: false
+                },
+                {
+                    id: 4,
+                    cpu_model: "Ryzen 7 5800X",
+                    cpu_cores: 8,
+                    ram_gb: 64,
+                    disks: [{ type: "nvme", size_tb: 1 }],
+                    price_effective_monthly: 38.25,
+                    benchmark_multi: 28756,
+                    benchmark_single: 3782,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00133,
+                    price_per_benchmark_point_single: 0.01012,
+                    price_per_gb_ram: 0.60,
+                    price_per_tb_disk: 38.25,
+                    location: "fsn",
+                    uplink_speed: 1000,
+                    ecc_memory: false
+                },
+                {
+                    id: 5,
+                    cpu_model: "Unknown CPU Model X",
+                    cpu_cores: 8,
+                    ram_gb: 32,
+                    disks: [{ type: "ssd", size_tb: 1 }],
+                    price_effective_monthly: 18.00,
+                    benchmark_multi: null,
+                    benchmark_single: null,
+                    benchmark_matched: false,
+                    price_per_benchmark_point_multi: null,
+                    price_per_benchmark_point_single: null,
+                    price_per_gb_ram: 0.56,
+                    price_per_tb_disk: 18.00,
+                    location: "nbg",
+                    uplink_speed: 100,
+                    ecc_memory: false
+                },
+                {
+                    id: 6,
+                    cpu_model: "Xeon E5-2690 v4",
+                    cpu_cores: 28,
+                    ram_gb: 128,
+                    disks: [{ type: "nvme", size_tb: 2 }],
+                    price_effective_monthly: 52.00,
+                    benchmark_multi: 34521,
+                    benchmark_single: 2589,
+                    benchmark_matched: true,
+                    price_per_benchmark_point_multi: 0.00151,
+                    price_per_benchmark_point_single: 0.02009,
+                    price_per_gb_ram: 0.41,
+                    price_per_tb_disk: 26.00,
+                    location: "hel",
+                    uplink_speed: 1000,
+                    ecc_memory: true
+                }
+            ];
+        }
+
+        // Initialize
+        async function init() {
+            await loadCloudPricing();
+            initStarterConfigs();
+            updateSortDescription();
+
+            // Try to load real data with graceful fallback
+            // Set USE_REAL_DATA = true to attempt loading from DuckDB-WASM + Parquet
+            // Set USE_REAL_DATA = false to use mock data (for testing/demo)
+            const USE_REAL_DATA = false; // Change to true when real Parquet data is available
+
+            if (USE_REAL_DATA) {
+                try {
+                    await loadRealDataWithFallback();
+                } catch (error) {
+                    console.error('Even fallback failed:', error);
+                    // Show error and use hardcoded fallback
+                    showFallbackMode();
+                    const fallbackData = getFallbackMockData();
+                    mockListings.length = 0;
+                    mockListings.push(...fallbackData);
+                }
+            }
+
+            // Try to restore filters from URL
+            const restoredFromURL = restoreFiltersFromURL();
+
+            // If no URL filters, run default initialization
+            if (!restoredFromURL) {
+                // Default sort: price_per_benchmark_point_multi ascending NULLS FIRST
+                filterAndSortListings('price_per_benchmark_point_multi', 'asc');
+            }
+
+            updateStaleness();
+            updateRefreshCountdown();
+        }
+
+        // Pipeline: fetch -> match -> compute -> write -> publish
+        // Wrapped in a refresh loop that runs every 10 minutes
+        let refreshInterval = null;
+        let countdownInterval = null;
+        let isRefreshing = false;
+
+        async function runPipeline() {
+            if (isRefreshing) {
+                console.log('Pipeline refresh already in progress, skipping...');
+                return;
+            }
+
+            isRefreshing = true;
+            const refreshStart = new Date();
+            console.log('Starting pipeline refresh at:', refreshStart.toISOString());
+
+            try {
+                // Step 1: Fetch - Load auction data (with fallback to mock data)
+                const USE_REAL_DATA = false; // Change to true when real Parquet data is available
+                if (USE_REAL_DATA) {
+                    try {
+                        await loadRealDataWithFallback();
+                    } catch (error) {
+                        console.error('Failed to load real data, using fallback:', error);
+                        const fallbackData = getFallbackMockData();
+                        mockListings.length = 0;
+                        mockListings.push(...fallbackData);
+                    }
+                }
+
+                // Step 2 & 3: Match & Compute
+                // Data is already processed in loadRealDataWithFallback or uses mock data
+                // The filterAndSortListings function handles matching and computing metrics
+
+                // Step 4: Write - Update in-memory listings data
+                // Data is already written to mockListings array
+
+                // Step 5: Publish - Display the results with current filters
+                // Re-apply current filters to refresh the display with new data
+                filterAndSortListings();
+
+                // Update staleness indicator
+                updateStaleness();
+
+                console.log('Pipeline refresh complete at:', new Date().toISOString());
+
+            } catch (error) {
+                console.error('Pipeline refresh failed:', error);
+                // Show error but don't break the refresh loop
+                showErrorState('unknown-error', { error: error.message });
+            } finally {
+                isRefreshing = false;
+                // Record the time of this refresh for countdown calculation
+                lastRefreshTime = new Date();
+            }
+        }
+
+        // Start the 10-minute refresh loop
+        function startRefreshLoop() {
+            if (refreshInterval !== null) {
+                console.log('Refresh loop already running, clearing existing interval');
+                clearInterval(refreshInterval);
+            }
+
+            if (countdownInterval !== null) {
+                clearInterval(countdownInterval);
+            }
+
+            console.log(`Starting ${REFRESH_INTERVAL_MS / 60000}-minute refresh loop`);
+
+            // Initialize last refresh time to now
+            lastRefreshTime = new Date();
+
+            // Start the refresh interval
+            refreshInterval = setInterval(async () => {
+                console.log('Scheduled refresh triggered');
+                await runPipeline();
+            }, REFRESH_INTERVAL_MS);
+
+            // Start the countdown update interval (every second)
+            countdownInterval = setInterval(() => {
+                updateRefreshCountdown();
+            }, 1000);
+
+            console.log('Refresh loop started - next refresh at:', new Date(Date.now() + REFRESH_INTERVAL_MS).toISOString());
+        }
+
+        // Manual refresh function (exposed for testing/debugging)
+        async function manualRefresh() {
+            console.log('Manual refresh triggered');
+            await runPipeline();
+        }
+
+        // Initialize
+        init();
+
+        // Start the 10-minute refresh loop after initial load
+        startRefreshLoop();
+
+        // Handle browser back/forward buttons
+        window.addEventListener('popstate', (event) => {
+            // Restore filters from URL when user navigates through history
+            isInitializingFromURL = true;
+            restoreFiltersFromURL();
+            isInitializingFromURL = false;
+        });
+
+        // In production, update staleness every minute
+        setInterval(updateStaleness, 60000);
+
+        // Expose manual refresh for debugging
+        window.manualRefresh = manualRefresh;
+        window.runPipeline = runPipeline;
+        window.startRefreshLoop = startRefreshLoop;
+    </script>
+    <script src="snapshot-diff.js"></script>
+    <script>
+        // Snapshot diff integration
+        let diffInitialized = false;
+
+        // Initialize snapshot diff functionality when DOM is loaded
+        async function initializeSnapshotDiff() {
+            if (diffInitialized) return;
+
+            try {
+                // Initialize the snapshot diff manager
+                await snapshotDiffManager.initialize();
+                console.log('Snapshot diff system ready');
+
+                // Process current mock listings to demonstrate the diff functionality
+                // In production, this would be called after loading real Parquet data
+                await snapshotDiffManager.processCurrentListings(mockListings);
+                console.log('Snapshot diff analysis complete');
+
+                diffInitialized = true;
+
+                // Set up periodic diff refresh (every 5 minutes)
+                setInterval(async () => {
+                    try {
+                        await snapshotDiffManager.processCurrentListings(mockListings);
+                        console.log('Snapshot diff refreshed');
+                    } catch (error) {
+                        console.error('Failed to refresh diff:', error);
+                    }
+                }, 5 * 60 * 1000); // 5 minutes
+
+            } catch (error) {
+                console.error('Failed to initialize snapshot diff:', error);
+                // Don't throw - allow the app to continue without diff functionality
+            }
+        }
+
+        // Initialize when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSnapshotDiff);
+        } else {
+            initializeSnapshotDiff();
+        }
+
+        // Also initialize after any data refresh
+        const originalFilterAndSort = filterAndSortListings;
+        filterAndSortListings = function(...args) {
+            const result = originalFilterAndSort.apply(this, args);
+
+            // Refresh diff after filtering/sorting
+            if (diffInitialized) {
+                snapshotDiffManager.processCurrentListings(mockListings).catch(err => {
+                    console.error('Failed to update diff after filter:', err);
+                });
+            }
+
+            return result;
+        };
+
+        // Add manual diff refresh for testing
+        async function manualDiffRefresh() {
+            if (!diffInitialized) {
+                await initializeSnapshotDiff();
+            }
+
+            try {
+                await snapshotDiffManager.processCurrentListings(mockListings);
+                alert('Diff data refreshed successfully!');
+            } catch (error) {
+                alert('Failed to refresh diff: ' + error.message);
+            }
+        }
+
+        // Add reset function for testing
+        async function resetSnapshotDiff() {
+            if (confirm('This will clear all stored snapshot data. Continue?')) {
+                try {
+                    await snapshotDiffManager.reset();
+                    alert('Snapshot diff reset successfully. Please refresh the page.');
+                } catch (error) {
+                    alert('Failed to reset diff: ' + error.message);
+                }
+            }
+        }
+
+        // Expose to window for debugging
+        window.snapshotDiffDebug = {
+            refresh: manualDiffRefresh,
+            reset: resetSnapshotDiff,
+            manager: snapshotDiffManager
+        };
+    </script>
+</body>
+</html>

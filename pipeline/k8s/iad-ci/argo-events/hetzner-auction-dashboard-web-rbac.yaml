@@ -1,0 +1,43 @@
+# RBAC Resources for Hetzner Auction Dashboard Web Deployment
+# These resources should be synced via ArgoCD from declarative-config
+
+---
+# ServiceAccount for Argo Events Sensor
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argo-events-sa
+  namespace: argo
+---
+# Role for Sensor to submit workflows
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-events-sensor-role
+  namespace: argo
+rules:
+  - apiGroups:
+      - argoproj.io
+    resources:
+      - workflows
+      - workflowtemplates
+    verbs:
+      - create
+      - get
+      - list
+      - watch
+---
+# RoleBinding for Sensor ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-events-sa-binding
+  namespace: argo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-events-sensor-role
+subjects:
+  - kind: ServiceAccount
+    name: argo-events-sa
+    namespace: argo
