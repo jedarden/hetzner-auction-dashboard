@@ -2139,7 +2139,10 @@
 
                 // Step 4: Load Parquet data
                 console.log('Loading Parquet data...');
-                const parquetUrl = 'https://auction-data.example.com/listings.parquet'; // Replace with actual URL
+                // Same-origin per ADR-7 (2026-08-06) — the pipeline bundles
+                // current_snapshot.parquet into the same Cloudflare Pages
+                // deployment as this page, no R2/cross-origin URL needed.
+                const parquetUrl = '/current_snapshot.parquet';
 
                 await db.query(`
                     CREATE TABLE listings AS
