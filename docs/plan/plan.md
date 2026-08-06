@@ -1,6 +1,6 @@
 # hetzner-auction-dashboard Plan
 
-_Last updated: 2026-08-01._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it.
+_Last updated: 2026-08-06._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it.
 
 ## Overview
 
@@ -115,7 +115,7 @@ The pipeline Deployment **MUST run as a single active writer** (`replicas: 1`). 
 
 ### Dependency Integration Contracts
 
-- **Hetzner auction feed** — surface used: the public Server Auction listings endpoint, polled read-only every 10 minutes. Forbidden: no write/order calls; no Robot API authentication needed since this only reads public listings. Unavailable/changed: if the feed is unreachable or its schema changes shape (see Edge Case Catalog), the pipeline aborts the run and keeps serving the last published snapshot; a schema change additionally needs a manual pipeline update, since that's a code change, not a transient blip.
+- **Hetzner auction feed** — surface used: `GET https://www.hetzner.com/_resources/app/data/app/live_data_sb.json`, a public unauthenticated JSON endpoint, polled read-only every 10 minutes. **Corrected 2026-08-06** — the original entry here pointed at the Robot API (`robot.hetzner.com/order/server_market/product`) and a legacy `/wird/json.pl` path; neither returns the real feed, and Phase 1's original fetcher was built against a schema that doesn't match either. Full endpoint verification, example payload, and the raw-feed→`RawListing` field mapping (nested `Hardware`/`Prices`/`Details` structure, not the flat shape originally assumed) live in `docs/notes/hetzner-live-feed-schema-2026-08-06.md`. Forbidden: no write/order calls; no Robot API authentication needed since this only reads public listings — that part of the original contract was already correct. Unavailable/changed: if the feed is unreachable or its schema changes shape again (see Edge Case Catalog EC-2), the pipeline aborts the run and keeps serving the last published snapshot; a schema change additionally needs a manual pipeline update, since that's a code change, not a transient blip.
 - **Cloudflare R2** — surface used: S3-compatible PUT/COPY/DELETE for the temp-key-then-swap publish pattern (see Pipeline Run Lifecycle), plus the public bucket URL with CORS and range-request support for the client's reads. Forbidden: no read-modify-write against the live key, ever. Unavailable: pipeline aborts the run and retries next cycle — same handling as a feed outage.
 - **DuckDB-WASM / httpfs** — surface used: `read_parquet()` over an HTTP(S) URL with range requests, entirely client-side. Forbidden: no server-side query execution, no client-side benchmark join (see What It Is NOT). Unavailable/fails to load: see Graceful Degradation — the dashboard shows an explicit error state rather than a blank page.
 - **Agentation (+ its React 18 peer dependency)** — surface used: mounted as an isolated component tree via CDN ESM import, rendering only its own feedback toolbar; never touches the dashboard's own DOM/state. Forbidden: no dependency on Agentation for any core dashboard functionality — it must be removable with zero effect on filters/sorts/data loading. Unavailable/fails to load (CDN down, ESM import fails): the toolbar silently doesn't appear; the dashboard itself is unaffected, since it was already rendering independently.
@@ -163,7 +163,7 @@ This is the part of the project that actually matters (see `docs/notes/benchmark
 
 Single flat table, one row per auction listing:
 
-- `listing_id`, `datacenter`, `location`, `available_from`
+- `listing_id`, `datacenter`, `location`, `available_from` (always `NULL` — **corrected 2026-08-06**: the live feed exposes no future-availability window at all, so this column can never be populated from real data. Every listing in the feed is immediately-orderable inventory by construction; kept as a schema column rather than dropped in case a real signal for it ever appears, but no code should attempt to source it. See `docs/notes/hetzner-live-feed-schema-2026-08-06.md`.)
 - `cpu_raw`, `cpu_normalized`, `cpu_benchmark_single`, `cpu_benchmark_multi`, `benchmark_matched` (bool)
 - `ram_gb`, `ram_ecc`
 - `disks`: `LIST<STRUCT{type: HDD/SSD/NVMe, count, capacity_gb}>` — one struct per distinct disk type/size group in the listing (e.g. a 2×NVMe + 2×HDD listing produces two structs), not fixed slot-columns; keeps a single denormalized row per listing while still representing variable, mixed disk configurations
