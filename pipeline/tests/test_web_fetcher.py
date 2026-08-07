@@ -24,7 +24,7 @@ class TestWebFetcher:
 
             # Should have created git clone, sparse checkout, and copy
             assert mock_run.call_count >= 4
-            assert web_dir == tmp_path / "web"
+            assert web_dir == tmp_path
 
     def test_fetch_web_content_updates_existing_cache(self, tmp_path):
         """Test that subsequent runs update existing cache."""

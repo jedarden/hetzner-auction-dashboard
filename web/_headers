@@ -5,3 +5,15 @@
 
 /unmatched-cpus.json
   Cache-Control: public, max-age=60
+
+# HTML shell: this file previously never applied at all (web_fetcher.py
+# nested web/'s contents under a web/ subdirectory, so Cloudflare Pages
+# never read _headers from the deploy root) -- index.html fell back to
+# Cloudflare's default edge cache (s-maxage=604800, 7 days), so a broken
+# manual test deploy stayed live for hours after being superseded.
+# no-cache forces edge + browser revalidation on every request.
+/index.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache

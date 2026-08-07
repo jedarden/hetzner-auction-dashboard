@@ -38,13 +38,12 @@ def fetch_web_content(target_dir: Path | str, repo_url: str = REPO_URL, web_subd
         web_subdir: Subdirectory within the repo to fetch (default: "web")
 
     Returns:
-        Path to the web content directory (target_dir / web_subdir)
+        target_dir, now containing web/'s contents at its root
 
     Raises:
         WebFetcherError: If git clone/pull or copy fails
     """
     target_dir = Path(target_dir)
-    web_target = target_dir / web_subdir
 
     if not target_dir.exists():
         raise WebFetcherError(f"Target directory does not exist: {target_dir}")
@@ -117,20 +116,19 @@ def fetch_web_content(target_dir: Path | str, repo_url: str = REPO_URL, web_subd
         if not cached_web.exists():
             raise WebFetcherError(f"Web subdirectory not found in cache: {cached_web}")
 
-        # Copy web/ content to target directory (replace if exists)
-        logger.info(f"Copying web/ content from {cached_web} to {web_target}")
+        # Copy web/'s *contents* directly into target_dir (the wrangler deploy
+        # root), not into a nested target_dir/web/ subdirectory -- Cloudflare
+        # Pages serves files relative to the deploy root, and only reads
+        # _headers from the deploy root too. Nesting under web/ put
+        # index.html at /web/index.html (404 at /) and made _headers
+        # (Cache-Control on the data files, ADR-7) silently never apply.
+        logger.info(f"Copying web/ content from {cached_web} to {target_dir}")
 
-        # Remove existing web/ directory if it exists
-        if web_target.exists():
-            import shutil
-            shutil.rmtree(web_target)
-
-        # Copy fresh content
         import shutil
-        shutil.copytree(cached_web, web_target)
+        shutil.copytree(cached_web, target_dir, dirs_exist_ok=True)
 
-        logger.info(f"Web content updated successfully at {web_target}")
-        return web_target
+        logger.info(f"Web content updated successfully at {target_dir}")
+        return target_dir
 
     except subprocess.TimeoutExpired as e:
         raise WebFetcherError(f"Git operation timed out: {e}")
