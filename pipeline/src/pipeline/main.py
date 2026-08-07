@@ -4,7 +4,7 @@ Hetzner Auction Pipeline — entrypoint
 Runs the 10-minute refresh loop described in docs/plan/plan.md's "Pipeline Run
 Lifecycle": fetch -> normalize/match -> compute -> write -> publish. Every
 step already implements its own verify-before-publish discipline (see
-r2_publisher.py) — this module's only job is to wire the existing pieces
+pages_publisher.py) — this module's only job is to wire the existing pieces
 together and keep the loop alive across a single run's failure.
 
 Configuration is entirely environment-variable driven (see the ConfigMap /
@@ -23,7 +23,7 @@ from pipeline.cpu_matcher import CpuMatcher
 from pipeline.enricher import enrich_listings_batch
 from pipeline.fetcher import FetchError, HetznerAuctionFetcher
 from pipeline.parquet_writer import write_listings_to_parquet
-from pipeline.r2_publisher import R2Publisher, R2PublisherError
+from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
 
 logging.basicConfig(
@@ -44,22 +44,14 @@ BENCHMARK_MAP_DIR = Path(os.environ.get("BENCHMARK_MAP_DIR", "/app/benchmark-map
 
 PARQUET_SNAPSHOT_KEY = os.environ.get("PARQUET_SNAPSHOT_KEY", "current_snapshot.parquet")
 UNMATCHED_REPORT_KEY = os.environ.get("UNMATCHED_REPORT_KEY", "unmatched-cpus.json")
+WEB_SOURCE_DIR = Path(os.environ.get("WEB_SOURCE_DIR", "/app/web"))
 
 
-def _build_publisher() -> R2Publisher:
-    return R2Publisher(
-        account_id=os.environ["R2_ACCOUNT_ID"],
-        access_key_id=os.environ["R2_ACCESS_KEY_ID"],
-        secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
-        bucket_name=os.environ["R2_BUCKET_NAME"],
-        endpoint_url=os.environ.get(
-            "R2_ENDPOINT_URL",
-            f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com",
-        ),
-    )
+def _build_publisher() -> PagesPublisher:
+    return PagesPublisher(directory=WEB_SOURCE_DIR)
 
 
-async def run_once(cpu_matcher: CpuMatcher, publisher: R2Publisher) -> None:
+async def run_once(cpu_matcher: CpuMatcher, publisher: PagesPublisher) -> None:
     fetcher = HetznerAuctionFetcher()
     raw_listings = await fetcher.fetch()
     logger.info(f"Fetched {len(raw_listings)} raw listings")
@@ -82,14 +74,25 @@ async def run_once(cpu_matcher: CpuMatcher, publisher: R2Publisher) -> None:
     logger.info(f"Enriched {len(enriched)} listings")
 
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:
-        tmp_parquet = Path(tmpdir) / "snapshot.parquet"
-        tmp_report = Path(tmpdir) / "unmatched-cpus.json"
+        deploy_dir = Path(tmpdir)
+        parquet_path = deploy_dir / PARQUET_SNAPSHOT_KEY
+        json_path = deploy_dir / UNMATCHED_REPORT_KEY
 
-        write_listings_to_parquet(enriched, tmp_parquet)
-        reporter.generate_report(tmp_report)
+        write_listings_to_parquet(enriched, parquet_path)
+        reporter.generate_report(json_path)
 
-        publisher.publish_parquet_snapshot(tmp_parquet, live_key=PARQUET_SNAPSHOT_KEY)
-        publisher.publish_json_report(tmp_report, live_key=UNMATCHED_REPORT_KEY)
+        # Copy web/ content to deployment directory
+        import shutil
+        for item in WEB_SOURCE_DIR.iterdir():
+            dest = deploy_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
+
+        # Create PagesPublisher for this deployment directory and publish
+        deploy_publisher = PagesPublisher(directory=deploy_dir)
+        deploy_publisher.publish()
 
     logger.info(
         f"Cycle complete: published {len(enriched)} listings, "
@@ -115,8 +118,8 @@ async def main_loop() -> None:
             # Per Pipeline Run Lifecycle: abort before any write, keep serving
             # the last snapshot, retry next cycle.
             logger.error(f"Fetch failed, keeping last published snapshot: {e}")
-        except R2PublisherError as e:
-            logger.error(f"Publish failed, live key untouched: {e}")
+        except PagesPublisherError as e:
+            logger.error(f"Publish failed, live deployment untouched: {e}")
         except Exception:
             logger.exception("Unexpected error in pipeline cycle — keeping last published snapshot")
 
