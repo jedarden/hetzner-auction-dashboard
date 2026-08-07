@@ -47,11 +47,7 @@ UNMATCHED_REPORT_KEY = os.environ.get("UNMATCHED_REPORT_KEY", "unmatched-cpus.js
 WEB_SOURCE_DIR = Path(os.environ.get("WEB_SOURCE_DIR", "/app/web"))
 
 
-def _build_publisher() -> PagesPublisher:
-    return PagesPublisher(directory=WEB_SOURCE_DIR)
-
-
-async def run_once(cpu_matcher: CpuMatcher, publisher: PagesPublisher) -> None:
+async def run_once(cpu_matcher: CpuMatcher) -> None:
     fetcher = HetznerAuctionFetcher()
     raw_listings = await fetcher.fetch()
     logger.info(f"Fetched {len(raw_listings)} raw listings")
@@ -90,7 +86,7 @@ async def run_once(cpu_matcher: CpuMatcher, publisher: PagesPublisher) -> None:
             else:
                 shutil.copy2(item, dest)
 
-        # Create PagesPublisher for this deployment directory and publish
+        # Publish to Cloudflare Pages
         deploy_publisher = PagesPublisher(directory=deploy_dir)
         deploy_publisher.publish()
 
@@ -108,12 +104,11 @@ async def main_loop() -> None:
         f"Loaded benchmark map: {cpu_matcher.get_reference_table_size()} reference entries, "
         f"{cpu_matcher.get_aliases_count()} aliases, {cpu_matcher.get_overrides_count()} overrides"
     )
-    publisher = _build_publisher()
 
     while True:
         cycle_start = time.monotonic()
         try:
-            await run_once(cpu_matcher, publisher)
+            await run_once(cpu_matcher)
         except FetchError as e:
             # Per Pipeline Run Lifecycle: abort before any write, keep serving
             # the last snapshot, retry next cycle.
