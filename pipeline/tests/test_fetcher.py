@@ -24,10 +24,20 @@ def fetcher():
 
 @pytest.fixture
 def sample_hetzner_response():
-    """Sample Hetzner auction API response (matches live_data_sb.json schema)."""
+    """Sample Hetzner auction API response (matches live_data_sb.json schema).
+
+    Includes examples covering:
+    - Single disk type (SSD/SATA) with ECC RAM
+    - Single disk type (NVMe) without ECC RAM
+    - Mixed disk types (NVMe + SSD) - matches real-world mixed listings
+    - Pure HDD configuration
+
+    Based on real Hetzner live_data_sb.json endpoint structure.
+    """
     return {
         "server": [
             {
+                # Example 1: Single SSD type with ECC RAM
                 "Id": 12345,
                 "Hardware": {
                     "CPU": {"Name": "Intel Xeon E3-1230 v6", "CoreCount": 1},
@@ -35,7 +45,7 @@ def sample_hetzner_response():
                     "Storage": {
                         "RealSize": 960, "Size": 960, "SizeUnit": "GB", "Amount": 2,
                         "Disks": ["480 GB Datacenter SSD", "480 GB Datacenter SSD"],
-                        "Details": {"nvme": [480, 480], "sata": [], "hdd": [], "general": [480, 480]}
+                        "Details": {"nvme": [], "sata": [480, 480], "hdd": [], "general": [480]}
                     }
                 },
                 "Prices": {
@@ -56,6 +66,7 @@ def sample_hetzner_response():
                 "Timer": {"ReduceNext": 12345, "ReduceNextHr": True}
             },
             {
+                # Example 2: Single NVMe type without ECC
                 "Id": 67890,
                 "Hardware": {
                     "CPU": {"Name": "AMD Ryzen 9 5950X", "CoreCount": 1},
@@ -63,7 +74,7 @@ def sample_hetzner_response():
                     "Storage": {
                         "RealSize": 2000, "Size": 2000, "SizeUnit": "GB", "Amount": 2,
                         "Disks": ["1000 GB NVMe SSD", "1000 GB NVMe SSD"],
-                        "Details": {"nvme": [1000, 1000], "sata": [], "hdd": [], "general": [1000, 1000]}
+                        "Details": {"nvme": [1000, 1000], "sata": [], "hdd": [], "general": [1000]}
                     }
                 },
                 "Prices": {
@@ -82,10 +93,68 @@ def sample_hetzner_response():
                     "Datacenter": {"Name": "NBG1-DC1", "Datacenter": "#NBG1-DC1"}
                 },
                 "Timer": {"ReduceNext": 67890, "ReduceNextHr": False}
+            },
+            {
+                # Example 3: Mixed NVMe + SSD (real-world pattern from live feed)
+                "Id": 54321,
+                "Hardware": {
+                    "CPU": {"Name": "Intel Core i7-8700", "CoreCount": 1},
+                    "RAM": {"RealSize": 65536, "Size": 64, "SizeUnit": "GB", "Amount": 1, "ecc": False},
+                    "Storage": {
+                        "RealSize": 3000, "Size": 3000, "SizeUnit": "GB", "Amount": 3,
+                        "Disks": ["1000 GB NVMe SSD", "1000 GB NVMe SSD", "1000 GB SSD"],
+                        "Details": {"nvme": [1000, 1000], "sata": [1000], "hdd": [], "general": [1000]}
+                    }
+                },
+                "Prices": {
+                    "monthly": {"EUR": 63.0, "USD": 70.0},
+                    "hourly": {"EUR": 0.0946, "USD": 0.1058},
+                    "setup": {"EUR": 0, "USD": 0},
+                    "fixed": False
+                },
+                "Details": {
+                    "Description": ["IPv4", "iNIC", "NVMe", "SSD"],
+                    "Information": ["1 x RAM 65536 MB DDR4", "2 x NVMe 1000 GB", "1 x SSD 1000 GB", "NIC 1 Gbit"],
+                    "Specials": ["IPv4"],
+                    "Traffic": "unlimited",
+                    "Bandwidth": 1000,
+                    "OS": ["Rescue system"],
+                    "Datacenter": {"Name": "FSN1-DC16", "Datacenter": "#FSN1-DC16"}
+                },
+                "Timer": {"ReduceNext": 54321, "ReduceNextHr": True}
+            },
+            {
+                # Example 4: Pure HDD configuration
+                "Id": 11111,
+                "Hardware": {
+                    "CPU": {"Name": "Intel Xeon D-1541", "CoreCount": 1},
+                    "RAM": {"RealSize": 16384, "Size": 16, "SizeUnit": "GB", "Amount": 1, "ecc": True},
+                    "Storage": {
+                        "RealSize": 8000, "Size": 8000, "SizeUnit": "GB", "Amount": 2,
+                        "Disks": ["4000 GB Enterprise HDD", "4000 GB Enterprise HDD"],
+                        "Details": {"nvme": [], "sata": [], "hdd": [4000, 4000], "general": [4000]}
+                    }
+                },
+                "Prices": {
+                    "monthly": {"EUR": 35.0, "USD": 39.0},
+                    "hourly": {"EUR": 0.055, "USD": 0.061},
+                    "setup": {"EUR": 0, "USD": 0},
+                    "fixed": False
+                },
+                "Details": {
+                    "Description": ["IPv4", "iNIC", "ENT.HDD"],
+                    "Information": ["1 x RAM 16384 MB DDR4 ECC", "2 x HDD 4000 GB Enterprise", "NIC 1 Gbit"],
+                    "Specials": ["IPv4", "ECC"],
+                    "Traffic": "unlimited",
+                    "Bandwidth": 1000,
+                    "OS": ["Rescue system"],
+                    "Datacenter": {"Name": "HEL1-DC1", "Datacenter": "#HEL1-DC1"}
+                },
+                "Timer": {"ReduceNext": 11111, "ReduceNextHr": False}
             }
         ],
         "filter": {"location": {"values": ["FSN", "NBG", "HEL"]}, "price": {"min": {"EUR": 10}, "max": {"EUR": 100}}},
-        "serverCount": 2
+        "serverCount": 4
     }
 
 
@@ -143,28 +212,53 @@ class TestFetcherParsing:
 
     @pytest.mark.asyncio
     async def test_parse_valid_response(self, fetcher, sample_hetzner_response):
-        """Test parsing a valid Hetzner response."""
+        """Test parsing a valid Hetzner response with all disk type variations."""
         listings = fetcher._parse_response(sample_hetzner_response)
 
-        assert len(listings) == 2
+        assert len(listings) == 4
 
-        # Check first listing
+        # Check first listing: SSD with ECC
         assert listings[0].listing_id == "12345"
         assert listings[0].cpu_raw == "Intel Xeon E3-1230 v6"
         assert listings[0].ram_gb == 32
         assert listings[0].ram_ecc is True
-        # Disk parsing is a separate bead - not asserting on disk details
+        assert listings[0].disks == [DiskSpec(type="SSD", count=2, capacity_gb=480)]
         assert listings[0].uplink_speed == 1000
         assert listings[0].price_base == 1999  # €19.99 in cents
         assert listings[0].price_setup_fee == 0
         assert listings[0].available_from is None  # Not present in live feed
+        assert listings[0].location == "FSN"
 
-        # Check second listing
+        # Check second listing: NVMe without ECC
         assert listings[1].listing_id == "67890"
         assert listings[1].cpu_raw == "AMD Ryzen 9 5950X"
         assert listings[1].ram_gb == 64
         assert listings[1].ram_ecc is False
-        assert listings[1].available_from is None  # Not present in live feed
+        assert listings[1].disks == [DiskSpec(type="NVMe", count=2, capacity_gb=1000)]
+        assert listings[1].price_base == 4999  # €49.99 in cents
+        assert listings[1].available_from is None
+        assert listings[1].location == "NBG"
+
+        # Check third listing: Mixed NVMe + SSD (real-world pattern)
+        assert listings[2].listing_id == "54321"
+        assert listings[2].cpu_raw == "Intel Core i7-8700"
+        assert listings[2].ram_gb == 64
+        assert listings[2].ram_ecc is False
+        assert listings[2].disks == [
+            DiskSpec(type="NVMe", count=2, capacity_gb=1000),
+            DiskSpec(type="SSD", count=1, capacity_gb=1000)
+        ]
+        assert listings[2].price_base == 6300  # €63.0 in cents
+        assert listings[2].location == "FSN"
+
+        # Check fourth listing: HDD with ECC
+        assert listings[3].listing_id == "11111"
+        assert listings[3].cpu_raw == "Intel Xeon D-1541"
+        assert listings[3].ram_gb == 16
+        assert listings[3].ram_ecc is True
+        assert listings[3].disks == [DiskSpec(type="HDD", count=2, capacity_gb=4000)]
+        assert listings[3].price_base == 3500  # €35.0 in cents
+        assert listings[3].location == "HEL"
 
     @pytest.mark.asyncio
     async def test_parse_empty_response_ec1(self, fetcher):
@@ -253,8 +347,9 @@ class TestFetcherHTTP:
         with patch("httpx.AsyncClient", return_value=mock_client):
             listings = await fetcher.fetch()
 
-        assert len(listings) == 2
+        assert len(listings) == 4
         assert listings[0].listing_id == "12345"
+        assert listings[2].listing_id == "54321"  # Mixed disk listing
 
     @pytest.mark.asyncio
     async def test_fetch_http_error(self, fetcher):
@@ -305,24 +400,25 @@ class TestFetcherHTTP:
 
 
 class TestPriceParsing:
-    """Test price parsing to EUR cents."""
+    """Test price parsing to EUR cents.
+
+    The real live_data_sb.json endpoint always returns Prices.monthly.EUR as
+    numeric values (float or int), never as currency strings. These tests
+    verify conversion from EUR floats/ints to cents.
+    """
 
     @pytest.mark.parametrize(
         ("input_price", "expected_cents"),
         [
-            ("€19.99", 1999),
-            ("€49.99", 4999),
-            ("19.99", 1999),
-            ("49.99", 4999),
-            ("1999", 1999),  # Assume cents
             (19.99, 1999),  # Float EUR
             (49.99, 4999),
+            (72, 7200),  # Integer EUR
             (0, 0),
-            ("€0.00", 0),
+            (60.7, 6070),  # Fractional EUR from real filter.price.lowest.EUR examples
         ],
     )
     def test_parse_price_cents(self, fetcher, input_price, expected_cents):
-        """Test various price formats parse correctly to cents."""
+        """Test numeric EUR values convert correctly to cents."""
         assert fetcher._parse_price_cents(input_price) == expected_cents
 
 
