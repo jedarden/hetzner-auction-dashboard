@@ -81,5 +81,5 @@ Raises `FetchError` with:
 
 - **Phase 2**: CPU benchmark reference table + matching/override system
 - **Phase 3**: Cost-metric computation + Parquet writer
-- **Phase 4**: R2 bucket + API token + refresh-loop Deployment
+- **Phase 4**: Cloudflare Pages publisher + wrangler deploy + refresh-loop Deployment
 - **Phase 5**: Client dashboard with DuckDB-WASM
