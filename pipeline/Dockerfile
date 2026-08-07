@@ -54,11 +54,14 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Verify installations
-RUN node --version && npm --version && git --version
+# Install wrangler CLI globally for Cloudflare Pages deployment
+RUN npm install -g wrangler
 
-# Create non-root user for security
-RUN groupadd -r pipeline && useradd -r -g pipeline pipeline
+# Verify installations
+RUN node --version && npm --version && git --version && wrangler --version
+
+# Create non-root user for security with home directory
+RUN groupadd -r pipeline && useradd -r -g pipeline -m -d /home/pipeline pipeline
 
 # Set working directory
 WORKDIR /app
