@@ -327,56 +327,132 @@ class TestPriceParsing:
 
 
 class TestDiskParsing:
-    """Test disk parsing from various response formats."""
+    """Test disk parsing from Hardware.Storage.Details structure."""
 
-    def test_parse_disk_list(self, fetcher):
-        """Test parsing disks from list format."""
+    def test_parse_mixed_disk_types(self, fetcher):
+        """Test parsing mixed disk types (NVMe and HDD)."""
         item = {
-            "disks": [
-                {"type": "SSD", "count": 2, "size_gb": 480},
-                {"type": "HDD", "count": 4, "size_gb": 2000},
-            ]
+            "Hardware": {
+                "Storage": {
+                    "Details": {
+                        "nvme": [960, 960],
+                        "sata": [],
+                        "hdd": [6000, 6000],
+                        "general": [960, 6000]
+                    }
+                }
+            }
         }
 
         disks = fetcher._parse_disks(item)
 
         assert len(disks) == 2
-        assert disks[0].type == "SSD"
-        assert disks[0].count == 2
-        assert disks[0].capacity_gb == 480
-        assert disks[1].type == "HDD"
-        assert disks[1].count == 4
-        assert disks[1].capacity_gb == 2000
-
-    def test_parse_single_disk_dict(self, fetcher):
-        """Test parsing single disk from dict format."""
-        item = {"disks": {"type": "NVMe", "count": 2, "size_gb": 1000}}
-
-        disks = fetcher._parse_disks(item)
-
-        assert len(disks) == 1
         assert disks[0].type == "NVMe"
         assert disks[0].count == 2
-        assert disks[0].capacity_gb == 1000
+        assert disks[0].capacity_gb == 960
+        assert disks[1].type == "HDD"
+        assert disks[1].count == 2
+        assert disks[1].capacity_gb == 6000
 
-    def test_parse_legacy_disk_fields(self, fetcher):
-        """Test parsing legacy disk field format."""
-        item = {"hdd_count": 4, "hdd_size_gb": 2000}
+    def test_parse_single_disk_type(self, fetcher):
+        """Test parsing single disk type (SATA/SSD)."""
+        item = {
+            "Hardware": {
+                "Storage": {
+                    "Details": {
+                        "nvme": [],
+                        "sata": [250, 250],
+                        "hdd": [],
+                        "general": [250]
+                    }
+                }
+            }
+        }
 
         disks = fetcher._parse_disks(item)
 
         assert len(disks) == 1
-        assert disks[0].type == "HDD"
-        assert disks[0].count == 4
-        assert disks[0].capacity_gb == 2000
+        assert disks[0].type == "SSD"
+        assert disks[0].count == 2
+        assert disks[0].capacity_gb == 250
 
-    def test_parse_no_disks(self, fetcher):
-        """Test parsing item with no disk information."""
-        item = {"cpu": "Intel Xeon", "ram": 32}
+    def test_parse_mixed_capacities_same_type(self, fetcher):
+        """Test parsing different capacities within same disk type."""
+        item = {
+            "Hardware": {
+                "Storage": {
+                    "Details": {
+                        "nvme": [],
+                        "sata": [500, 250],
+                        "hdd": [],
+                        "general": [500, 250]
+                    }
+                }
+            }
+        }
+
+        disks = fetcher._parse_disks(item)
+
+        assert len(disks) == 2
+        # Both should be SSD type
+        assert all(d.type == "SSD" for d in disks)
+        # Each capacity should have count=1
+        capacities = {d.capacity_gb: d.count for d in disks}
+        assert capacities[500] == 1
+        assert capacities[250] == 1
+
+    def test_parse_empty_disks(self, fetcher):
+        """Test parsing item with empty disk lists."""
+        item = {
+            "Hardware": {
+                "Storage": {
+                    "Details": {
+                        "nvme": [],
+                        "sata": [],
+                        "hdd": [],
+                        "general": []
+                    }
+                }
+            }
+        }
 
         disks = fetcher._parse_disks(item)
 
         assert len(disks) == 0
+
+    def test_parse_missing_details(self, fetcher):
+        """Test parsing item with missing Details structure."""
+        item = {"Hardware": {"CPU": {"Name": "Intel Xeon"}}}
+
+        disks = fetcher._parse_disks(item)
+
+        assert len(disks) == 0
+
+    def test_parse_ignores_general_key(self, fetcher):
+        """Test that 'general' key is ignored (it's a redundant union)."""
+        item = {
+            "Hardware": {
+                "Storage": {
+                    "Details": {
+                        "nvme": [500, 500],
+                        "sata": [250],
+                        "hdd": [],
+                        "general": [500, 500, 250]  # More entries than actual disks
+                    }
+                }
+            }
+        }
+
+        disks = fetcher._parse_disks(item)
+
+        # Should only count nvme and sata, ignore general
+        assert len(disks) == 2
+        nvme_disk = next(d for d in disks if d.type == "NVMe")
+        sata_disk = next(d for d in disks if d.type == "SSD")
+        assert nvme_disk.count == 2
+        assert nvme_disk.capacity_gb == 500
+        assert sata_disk.count == 1
+        assert sata_disk.capacity_gb == 250
 
 
 # Integration test marker - can be run against real Hetzner API

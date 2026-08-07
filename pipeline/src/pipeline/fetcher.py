@@ -71,18 +71,15 @@ class HetznerAuctionFetcher:
     """
     Fetches auction listings from Hetzner's Server Auction.
 
-    Supports multiple potential endpoints to maximize compatibility:
-    - Robot API: /order/server_market/product (authenticated)
-    - Web scrape fallback: /sb/ page with embedded JSON
+    Uses the public live data endpoint (no authentication required).
     """
 
     def __init__(
         self,
-        base_url: str = "https://robot.hetzner.com",
         timeout: float = 30.0,
         user_agent: str | None = None,
     ):
-        self.base_url = base_url.rstrip("/")
+        self.live_data_url = "https://www.hetzner.com/_resources/app/data/app/live_data_sb.json"
         self.timeout = timeout
         self.user_agent = user_agent or "hetzner-auction-pipeline/0.1.0"
 
@@ -103,31 +100,8 @@ class HetznerAuctionFetcher:
                 timeout=self.timeout,
                 headers={"User-Agent": self.user_agent},
             ) as client:
-                # Try multiple endpoints in order of preference
-                endpoints = [
-                    "/order/server_market/product",
-                    "/wird/json.pl?json=get_server_market_v2",  # Legacy endpoint
-                ]
-
-                last_error = None
-                for endpoint in endpoints:
-                    try:
-                        data = await self._try_endpoint(client, endpoint)
-                        return self._parse_response(data)
-                    except FetchError as e:
-                        logger.debug(f"Endpoint {endpoint} failed: {e}")
-                        last_error = e
-                        continue
-                    except Exception as e:
-                        logger.debug(f"Unexpected error from {endpoint}: {e}")
-                        last_error = FetchError(f"Unexpected error from {endpoint}: {e}")
-                        continue
-
-                # If all endpoints fail, raise the last FetchError with original details
-                if last_error:
-                    raise last_error
-                else:
-                    raise FetchError("All Hetzner endpoints failed or returned malformed data")
+                data = await self._try_endpoint(client)
+                return self._parse_response(data)
 
         except httpx.HTTPStatusError as e:
             raise FetchError(
@@ -137,10 +111,10 @@ class HetznerAuctionFetcher:
         except httpx.RequestError as e:
             raise FetchError(f"Network error fetching from Hetzner: {e}") from e
 
-    async def _try_endpoint(self, client: httpx.AsyncClient, endpoint: str) -> dict[str, Any]:
-        """Try a single endpoint and return JSON data."""
-        url = f"{self.base_url}{endpoint}"
-        logger.debug(f"Trying endpoint: {url}")
+    async def _try_endpoint(self, client: httpx.AsyncClient) -> dict[str, Any]:
+        """Fetch and return JSON data from the live data endpoint."""
+        url = self.live_data_url
+        logger.debug(f"Fetching from: {url}")
 
         try:
             response = await client.get(url)
@@ -227,37 +201,52 @@ class HetznerAuctionFetcher:
         return listings
 
     def _parse_listing_item(self, item: dict[str, Any], fetched_at: datetime) -> RawListing:
-        """Parse a single listing item from Hetzner's response."""
-        # Extract listing ID
-        listing_id = str(item.get("id") or item.get("product_id") or "")
+        """Parse a single listing item from Hetzner's live data response.
+
+        The live data schema has nested Hardware/Prices/Details structure.
+        See docs/notes/hetzner-live-feed-schema-2026-08-06.md for field mapping.
+        """
+        # Extract listing ID (note: "Id" not "id" in the live data feed)
+        listing_id = str(item.get("Id") or "")
         if not listing_id:
-            raise ValueError("Missing listing_id")
-
-        # Extract datacenter/location
-        datacenter = item.get("datacenter") or item.get("dc") or ""
-        location = item.get("location") or self._extract_location_from_dc(datacenter)
-
-        # Extract availability
-        available_from = item.get("available_from")  # May be None if immediately available
+            raise ValueError("Missing listing_id (Id field)")
 
         # Extract CPU (raw - will be normalized later)
-        cpu_raw = item.get("cpu") or item.get("cpu_model") or item.get("processor") or ""
+        hardware = item.get("Hardware", {})
+        cpu_section = hardware.get("CPU", {})
+        cpu_raw = cpu_section.get("Name", "")
         if not cpu_raw:
             raise ValueError(f"Missing cpu_raw for listing {listing_id}")
 
         # Extract RAM
-        ram_gb = int(item.get("ram") or item.get("memory") or item.get("ram_gb") or 0)
-        ram_ecc = bool(item.get("ram_ecc") or item.get("ecc") or False)
+        ram_section = hardware.get("RAM", {})
+        ram_gb = int(ram_section.get("Size", 0))
+        ram_ecc = bool(ram_section.get("ecc", False))
 
-        # Extract disks
-        disks = self._parse_disks(item)
+        # Extract datacenter
+        details = item.get("Details", {})
+        datacenter_section = details.get("Datacenter", {})
+        datacenter = datacenter_section.get("Name", "")
 
-        # Extract network
-        uplink_speed = int(item.get("uplink") or item.get("bandwidth") or item.get("uplink_speed") or 1000)
+        # Extract location from datacenter (unchanged helper)
+        location = self._extract_location_from_dc(datacenter)
+
+        # Available from is not present in this feed
+        available_from = None
+
+        # Extract uplink speed
+        uplink_speed = int(details.get("Bandwidth", 1000))
 
         # Extract pricing (EUR cents)
-        price_base = self._parse_price_cents(item.get("price") or item.get("price_monthly") or "0")
-        price_setup_fee = self._parse_price_cents(item.get("setup_fee") or item.get("price_setup") or "0")
+        prices = item.get("Prices", {})
+        monthly_section = prices.get("monthly", {})
+        setup_section = prices.get("setup", {})
+
+        price_base = self._parse_price_cents(monthly_section.get("EUR", 0))
+        price_setup_fee = self._parse_price_cents(setup_section.get("EUR", 0))
+
+        # Extract disks (separate bead - leave current implementation alone)
+        disks = self._parse_disks(item)
 
         return RawListing(
             listing_id=listing_id,
@@ -275,37 +264,43 @@ class HetznerAuctionFetcher:
         )
 
     def _parse_disks(self, item: dict[str, Any]) -> list[DiskSpec]:
-        """Parse disk specifications from a listing."""
+        """Parse disk specifications from a listing.
+
+        Real schema: item['Hardware']['Storage']['Details'] is a dict with keys
+        hdd, sata, nvme (each a flat list of per-disk capacity-in-GB integers).
+        See docs/notes/hetzner-live-feed-schema-2026-08-06.md.
+        """
         disks = []
 
-        # Multiple possible structures for disk data
-        disk_data = item.get("disks") or item.get("storage") or item.get("drives")
+        # Extract the Details dictionary from Hardware.Storage
+        hardware = item.get("Hardware", {})
+        storage = hardware.get("Storage", {})
+        details = storage.get("Details", {})
 
-        if isinstance(disk_data, list):
-            for disk in disk_data:
-                if isinstance(disk, dict):
-                    disk_type = disk.get("type") or disk.get("disk_type") or ""
-                    count = int(disk.get("count") or disk.get("qty") or 1)
-                    size_gb = int(disk.get("size_gb") or disk.get("capacity_gb") or disk.get("size") or 0)
+        if not isinstance(details, dict):
+            return disks
 
-                    if disk_type and size_gb > 0:
-                        disks.append(DiskSpec(type=disk_type, count=count, capacity_gb=size_gb))
+        # Process each disk type (skip 'general' - it's a redundant union)
+        for feed_key, disk_type in [
+            ("nvme", "NVMe"),
+            ("sata", "SSD"),
+            ("hdd", "HDD"),
+        ]:
+            capacity_list = details.get(feed_key, [])
 
-        elif isinstance(disk_data, dict):
-            # Single disk specification
-            disk_type = disk_data.get("type") or disk_data.get("disk_type") or ""
-            count = int(disk_data.get("count") or disk_data.get("qty") or 1)
-            size_gb = int(disk_data.get("size_gb") or disk_data.get("capacity_gb") or disk_data.get("size") or 0)
+            if not isinstance(capacity_list, list):
+                continue
 
-            if disk_type and size_gb > 0:
-                disks.append(DiskSpec(type=disk_type, count=count, capacity_gb=size_gb))
+            # Group identical capacities: count how many disks of each capacity
+            capacity_counts: dict[int, int] = {}
+            for capacity in capacity_list:
+                if isinstance(capacity, (int, float)) and capacity > 0:
+                    capacity_gb = int(capacity)
+                    capacity_counts[capacity_gb] = capacity_counts.get(capacity_gb, 0) + 1
 
-        # If no disks found, try legacy fields
-        if not disks:
-            hdd_count = int(item.get("hdd_count") or 0)
-            hdd_size = int(item.get("hdd_size_gb") or 0)
-            if hdd_count > 0 and hdd_size > 0:
-                disks.append(DiskSpec(type="HDD", count=hdd_count, capacity_gb=hdd_size))
+            # Emit one DiskSpec per distinct capacity for this disk type
+            for capacity_gb, count in capacity_counts.items():
+                disks.append(DiskSpec(type=disk_type, count=count, capacity_gb=capacity_gb))
 
         return disks
 
