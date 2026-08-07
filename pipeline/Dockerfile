@@ -27,7 +27,7 @@ COPY pipeline/pyproject.toml .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Stage 2: Runtime image
+# Stage 2: Runtime image with Node.js
 FROM python:3.11-slim
 
 # Set labels
@@ -41,10 +41,21 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIPELINE_LOG_LEVEL=INFO
 
-# Install runtime dependencies only
+# Install runtime dependencies including Node.js, git, and curl (for npx)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
+    git \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22.x using NodeSource setup script
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Verify installations
+RUN node --version && npm --version && git --version
 
 # Create non-root user for security
 RUN groupadd -r pipeline && useradd -r -g pipeline pipeline

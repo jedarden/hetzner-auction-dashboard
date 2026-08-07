@@ -146,7 +146,7 @@ class PagesPublisher:
 
     def _wrangler_deploy(self) -> dict:
         """
-        Run wrangler pages deploy on the directory.
+        Run wrangler pages deploy on the directory using npx.
 
         Returns:
             dict with deployment metadata
@@ -159,8 +159,10 @@ class PagesPublisher:
         env["CLOUDFLARE_API_TOKEN"] = self.api_token
         env["CLOUDFLARE_ACCOUNT_ID"] = self.account_id
 
+        # Use npx to run wrangler (matches website-build workflow pattern)
         cmd = [
-            "wrangler",
+            "npx",
+            "wrangler@latest",
             "pages",
             "deploy",
             str(self.directory),
