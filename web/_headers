@@ -1,0 +1,7 @@
+# Data file cache controls (ADR-7)
+# Short cache to keep fetched_at staleness indicator meaningful
+/current_snapshot.parquet
+  Cache-Control: public, max-age=60
+
+/unmatched-cpus.json
+  Cache-Control: public, max-age=60
