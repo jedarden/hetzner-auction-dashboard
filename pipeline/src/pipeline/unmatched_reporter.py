@@ -4,7 +4,7 @@ Unmatched CPU Reporter
 Generates the unmatched-cpus.json report that lists all unmatched CPU strings
 and their affected listing counts from each pipeline run.
 
-This report is published alongside the Parquet snapshot to R2 and used to
+This report is published alongside the Parquet snapshot to Cloudflare Pages and used to
 maintain the benchmark-map alias and override lists.
 """
 
