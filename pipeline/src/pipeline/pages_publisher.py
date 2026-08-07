@@ -176,6 +176,12 @@ class PagesPublisher:
         try:
             result = subprocess.run(
                 cmd,
+                # wrangler creates a .wrangler/ cache+tmp dir relative to cwd.
+                # Default cwd is /app, which is read-only (readOnlyRootFilesystem)
+                # -- that failure surfaces as a misleading "maybe you intended a
+                # Worker project" error, not a permissions error. self.directory
+                # is on the writable /tmp emptyDir.
+                cwd=str(self.directory),
                 env=env,
                 capture_output=True,
                 text=True,
