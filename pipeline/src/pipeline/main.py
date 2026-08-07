@@ -25,6 +25,7 @@ from pipeline.fetcher import FetchError, HetznerAuctionFetcher
 from pipeline.parquet_writer import write_listings_to_parquet
 from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
+from pipeline.web_fetcher import WebFetcherError, fetch_web_content
 
 logging.basicConfig(
     level=os.environ.get("PIPELINE_LOG_LEVEL", "INFO"),
@@ -44,7 +45,7 @@ BENCHMARK_MAP_DIR = Path(os.environ.get("BENCHMARK_MAP_DIR", "/app/benchmark-map
 
 PARQUET_SNAPSHOT_KEY = os.environ.get("PARQUET_SNAPSHOT_KEY", "current_snapshot.parquet")
 UNMATCHED_REPORT_KEY = os.environ.get("UNMATCHED_REPORT_KEY", "unmatched-cpus.json")
-WEB_SOURCE_DIR = Path(os.environ.get("WEB_SOURCE_DIR", "/app/web"))
+WEB_CACHE_DIR = Path(os.environ.get("WEB_CACHE_DIR", "/tmp/web-cache"))
 
 
 async def run_once(cpu_matcher: CpuMatcher) -> None:
@@ -77,14 +78,13 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
         write_listings_to_parquet(enriched, parquet_path)
         reporter.generate_report(json_path)
 
-        # Copy web/ content to deployment directory
-        import shutil
-        for item in WEB_SOURCE_DIR.iterdir():
-            dest = deploy_dir / item.name
-            if item.is_dir():
-                shutil.copytree(item, dest)
-            else:
-                shutil.copy2(item, dest)
+        # Fetch latest web/ content from GitHub (per-cycle refresh)
+        try:
+            web_dir = fetch_web_content(deploy_dir)
+            logger.info(f"Fresh web/ content copied to {web_dir}")
+        except WebFetcherError as e:
+            logger.error(f"Failed to fetch web content, aborting publish: {e}")
+            raise
 
         # Publish to Cloudflare Pages
         deploy_publisher = PagesPublisher(directory=deploy_dir)
