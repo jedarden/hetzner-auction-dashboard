@@ -36,10 +36,14 @@ LABEL description="Hetzner Auction Dashboard Pipeline - 10-minute refresh loop"
 LABEL version="0.1.0"
 
 # Set environment variables
+# PYTHONPATH: `pipeline/src` is copied to /app/src below (src-layout), but
+# WORKDIR is /app and the package is never `pip install`ed — without this,
+# `python -m pipeline.main` raises ModuleNotFoundError: No module named 'pipeline'.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=UTF-8 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIPELINE_LOG_LEVEL=INFO
+    PIPELINE_LOG_LEVEL=INFO \
+    PYTHONPATH=/app/src
 
 # Install runtime dependencies including Node.js, git, and curl (for npx)
 RUN apt-get update && apt-get install -y --no-install-recommends \
