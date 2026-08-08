@@ -97,6 +97,8 @@ class ParquetWriter:
             "passmark_id": [listing.passmark_id for listing in listings],
             "single_thread_score": [listing.single_thread_score for listing in listings],
             "multi_thread_score": [listing.multi_thread_score for listing in listings],
+            "cpu_cores": [listing.cpu_cores for listing in listings],
+            "cpu_threads": [listing.cpu_threads for listing in listings],
             "benchmark_match_method": [listing.benchmark_match_method for listing in listings],
             # Hardware specs
             "ram_gb": [listing.ram_gb for listing in listings],
@@ -158,6 +160,8 @@ class ParquetWriter:
             pa.field("passmark_id", pa.int32()),  # None if unmatched
             pa.field("single_thread_score", pa.int32()),  # None if unmatched
             pa.field("multi_thread_score", pa.int32()),  # None if unmatched
+            pa.field("cpu_cores", pa.int32()),  # None if unmatched or reference data unresolved
+            pa.field("cpu_threads", pa.int32()),  # None if unmatched or reference data unresolved
             pa.field("benchmark_match_method", pa.string()),  # None if unmatched
             # Hardware specs
             pa.field("ram_gb", pa.int32()),

@@ -48,6 +48,8 @@ def generate_sample_listings() -> list[EnrichedListing]:
         passmark_id=2680,
         single_thread_score=1500,
         multi_thread_score=8000,
+        cores=None,
+        threads=None,
         match_method="direct",
     )
 
@@ -76,6 +78,8 @@ def generate_sample_listings() -> list[EnrichedListing]:
         passmark_id=3456,
         single_thread_score=2000,
         multi_thread_score=16000,
+        cores=None,
+        threads=None,
         match_method="direct",
     )
 
@@ -101,6 +105,8 @@ def generate_sample_listings() -> list[EnrichedListing]:
         passmark_id=None,
         single_thread_score=None,
         multi_thread_score=None,
+        cores=None,
+        threads=None,
         match_method=None,
     )
 
@@ -126,6 +132,8 @@ def generate_sample_listings() -> list[EnrichedListing]:
         passmark_id=2100,
         single_thread_score=1200,
         multi_thread_score=6000,
+        cores=None,
+        threads=None,
         match_method="direct",
     )
 

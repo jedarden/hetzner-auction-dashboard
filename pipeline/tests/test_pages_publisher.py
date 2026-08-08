@@ -141,6 +141,8 @@ class TestArtifactVerification:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             match_method=None,
         )
         reporter.process_listing("test-listing-1", cpu_match)
@@ -277,6 +279,8 @@ class TestPublish:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             match_method=None,
         )
         reporter.process_listing("test-listing-1", cpu_match)
@@ -449,6 +453,8 @@ def _make_sample_listing(
         passmark_id=passmark_id,
         single_thread_score=single_thread_score,
         multi_thread_score=multi_thread_score,
+        cores=None,
+        threads=None,
         match_method=benchmark_match_method,
     )
 

@@ -31,6 +31,8 @@ class TestUnmatchedCpuReporter:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             matched=False,
             match_method=None,
         )
@@ -52,6 +54,8 @@ class TestUnmatchedCpuReporter:
             passmark_id=5773,
             single_thread_score=2012,
             multi_thread_score=21339,
+            cores=None,
+            threads=None,
             matched=True,
             match_method="direct",
         )
@@ -72,6 +76,8 @@ class TestUnmatchedCpuReporter:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             matched=False,
             match_method=None,
         )
@@ -96,6 +102,8 @@ class TestUnmatchedCpuReporter:
                 passmark_id=None,
                 single_thread_score=None,
                 multi_thread_score=None,
+                cores=None,
+                threads=None,
                 matched=False,
                 match_method=None,
             )
@@ -116,6 +124,8 @@ class TestUnmatchedCpuReporter:
                 passmark_id=None,
                 single_thread_score=None,
                 multi_thread_score=None,
+                cores=None,
+                threads=None,
                 matched=False,
                 match_method=None,
             )
@@ -156,6 +166,8 @@ class TestUnmatchedCpuReporter:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             matched=False,
             match_method=None,
         )
@@ -175,6 +187,8 @@ class TestUnmatchedCpuReporter:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             matched=False,
             match_method=None,
         )

@@ -127,10 +127,13 @@ class TestWebRefreshMechanism:
             # Fetch web content into deploy directory (simulating pipeline behavior)
             web_dir = fetch_web_content(deploy_dir)
 
-            # Verify web/ is at the expected location in deploy directory
-            expected_web_path = deploy_dir / "web"
-            assert expected_web_path == web_dir, \
-                f"Web directory not at expected location: {web_dir} vs {expected_web_path}"
+            # web/'s contents are flattened directly into the deploy root
+            # (not nested under a web/ subdirectory) -- see web_fetcher.py;
+            # Cloudflare Pages serves relative to the deploy root and only
+            # reads _headers from there too, so nesting broke both routing
+            # and Cache-Control (fixed 2026-08-08, app repo commit e57a4c1).
+            assert deploy_dir == web_dir, \
+                f"Web directory not at expected location: {web_dir} vs {deploy_dir}"
 
             # Verify web/ contains expected files
             index_html = web_dir / "index.html"
