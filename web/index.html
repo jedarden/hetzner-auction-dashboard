@@ -583,26 +583,6 @@
             font-weight: 500;
         }
 
-        .fallback-mode {
-            background: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-
-        .fallback-mode-title {
-            font-weight: 600;
-            color: #856404;
-            margin-bottom: 10px;
-        }
-
-        .fallback-mode-text {
-            color: #856404;
-            font-size: 0.9rem;
-            line-height: 1.4;
-        }
-
         @media (max-width: 768px) {
             .container {
                 padding: 15px;
@@ -776,7 +756,6 @@
         let isLoadingData = false;
         let duckDBLoadFailed = false;
         let parquetFetchFailed = false;
-        let usingFallbackData = false;
 
         // Refresh loop tracking
         const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
@@ -914,117 +893,11 @@
             ]
         };
 
-        // Mock listings data (fallback when real data loading fails)
-        const mockListings = [
-            {
-                id: 1,
-                cpu_model: "Ryzen 9 5950X",
-                cpu_cores: 16,
-                ram_gb: 128,
-                disks: [{ type: "nvme", size_tb: 2 }],
-                price_effective_monthly: 45.99,
-                benchmark_multi: 51234,
-                benchmark_single: 4287,
-                benchmark_matched: true,
-                price_per_benchmark_point_multi: 0.00090,
-                price_per_benchmark_point_single: 0.01073,
-                price_per_gb_ram: 0.36,
-                price_per_tb_disk: 22.99,
-                location: "fsn",
-                uplink_speed: 1000,
-                ecc_memory: false
-            },
-            {
-                id: 2,
-                cpu_model: "Xeon E5-2680 v4",
-                cpu_cores: 14,
-                ram_gb: 64,
-                disks: [{ type: "hdd", size_tb: 4 }],
-                price_effective_monthly: 28.50,
-                benchmark_multi: 18907,
-                benchmark_single: 2134,
-                benchmark_matched: true,
-                price_per_benchmark_point_multi: 0.00151,
-                price_per_benchmark_point_single: 0.01335,
-                price_per_gb_ram: 0.45,
-                price_per_tb_disk: 7.13,
-                location: "nbg",
-                uplink_speed: 1000,
-                ecc_memory: true
-            },
-            {
-                id: 3,
-                cpu_model: "Core i7-12700",
-                cpu_cores: 12,
-                ram_gb: 32,
-                disks: [{ type: "nvme", size_tb: 1 }],
-                price_effective_monthly: 22.75,
-                benchmark_multi: 24843,
-                benchmark_single: 3891,
-                benchmark_matched: true,
-                price_per_benchmark_point_multi: 0.00092,
-                price_per_benchmark_point_single: 0.00585,
-                price_per_gb_ram: 0.71,
-                price_per_tb_disk: 22.75,
-                location: "hel",
-                uplink_speed: 100,
-                ecc_memory: false
-            },
-            {
-                id: 4,
-                cpu_model: "Ryzen 7 5800X",
-                cpu_cores: 8,
-                ram_gb: 64,
-                disks: [{ type: "nvme", size_tb: 1 }],
-                price_effective_monthly: 38.25,
-                benchmark_multi: 28756,
-                benchmark_single: 3782,
-                benchmark_matched: true,
-                price_per_benchmark_point_multi: 0.00133,
-                price_per_benchmark_point_single: 0.01012,
-                price_per_gb_ram: 0.60,
-                price_per_tb_disk: 38.25,
-                location: "fsn",
-                uplink_speed: 1000,
-                ecc_memory: false
-            },
-            {
-                id: 5,
-                cpu_model: "Unknown CPU Model X",
-                cpu_cores: 8,
-                ram_gb: 32,
-                disks: [{ type: "ssd", size_tb: 1 }],
-                price_effective_monthly: 18.00,
-                benchmark_multi: null,
-                benchmark_single: null,
-                benchmark_matched: false,
-                price_per_benchmark_point_multi: null,
-                price_per_benchmark_point_single: null,
-                price_per_gb_ram: 0.56,
-                price_per_tb_disk: 18.00,
-                location: "nbg",
-                uplink_speed: 100,
-                ecc_memory: false
-            },
-            {
-                id: 6,
-                cpu_model: "Xeon E5-2690 v4",
-                cpu_cores: 28,
-                ram_gb: 128,
-                disks: [{ type: "nvme", size_tb: 2 }],
-                price_effective_monthly: 52.00,
-                benchmark_multi: 34521,
-                benchmark_single: 2589,
-                benchmark_matched: true,
-                price_per_benchmark_point_multi: 0.00151,
-                price_per_benchmark_point_single: 0.02009,
-                price_per_gb_ram: 0.41,
-                price_per_tb_disk: 26.00,
-                location: "hel",
-                uplink_speed: 1000,
-                ecc_memory: true
-            }
-        ];
+        // Live listing data, populated exclusively from the real Parquet
+        // snapshot (see loadDuckDBAndParquet). No hardcoded/mock data --
+        // an empty array here means data hasn't loaded yet or a real load
+        // failed, in which case showErrorState() handles the messaging.
+        let listings = [];
 
         let currentPreset = null;
         let userSortAxis = 'auto'; // 'auto' means use preset's default, otherwise specific sort field
@@ -1258,7 +1131,7 @@
 
         // Find the single best-value listing (highest price_per_benchmark_point_multi among benchmark_matched=true)
         function findBestDeal() {
-            const benchmarkMatchedListings = mockListings.filter(listing =>
+            const benchmarkMatchedListings = listings.filter(listing =>
                 listing.benchmark_matched === true &&
                 listing.price_per_benchmark_point_multi !== null
             );
@@ -1447,7 +1320,7 @@
             };
 
             // Filter listings
-            let filtered = mockListings.filter(listing => {
+            let filtered = listings.filter(listing => {
                 // CPU family filter
                 if (filters.cpu_family) {
                     const cpuLower = listing.cpu_model.toLowerCase();
@@ -2027,27 +1900,6 @@
             isLoadingData = false;
         }
 
-        function showFallbackMode() {
-            const container = document.getElementById('error-container');
-            const listingsContainer = document.getElementById('listings-container');
-
-            // Hide error state, show listings
-            container.innerHTML = `
-                <div class="fallback-mode">
-                    <div class="fallback-mode-title">⚠️ Using Sample Data</div>
-                    <div class="fallback-mode-text">
-                        The dashboard is currently displaying sample/mock data because the live auction data could not be loaded.
-                        This is for demonstration purposes only. The filters and sorting work, but the results are not real auction listings.
-                        ${usingFallbackData ? '<br><strong>Original error:</strong> ' + currentErrorState : ''}
-                    </div>
-                </div>
-            `;
-
-            container.style.display = 'block';
-            listingsContainer.style.display = 'block';
-            usingFallbackData = true;
-        }
-
         function clearErrorState() {
             const container = document.getElementById('error-container');
             const listingsContainer = document.getElementById('listings-container');
@@ -2086,11 +1938,15 @@
                 // Try to load real data
                 await loadDuckDBAndParquet();
                 hideLoadingState();
-                return realListings;
+                return listings;
             } catch (error) {
-                console.error('Failed to load real data, falling back to mock data:', error);
+                console.error('Failed to load real auction data:', error);
+                hideLoadingState();
 
-                // Determine error type and show appropriate error state
+                // Determine error type and show appropriate error state.
+                // No mock-data fallback: a real failure shows a real error
+                // (with a retry button, see showErrorState/retryDataLoad)
+                // rather than silently substituting fake listings.
                 let errorType = 'unknown-error';
                 let errorDetails = { error: error.message };
 
@@ -2111,18 +1967,9 @@
                     errorType = 'both-failed';
                 }
 
-                // Show error state for a moment, then switch to fallback mode
                 showErrorState(errorType, errorDetails);
 
-                // Wait a moment so user sees the error, then switch to fallback mode
-                setTimeout(() => {
-                    showFallbackMode();
-                    // Initialize with mock data
-                    mockListings.length = 0; // Clear if needed
-                    mockListings.push(...getFallbackMockData());
-                }, 3000);
-
-                return mockListings;
+                return listings;
             }
         }
 
@@ -2134,15 +1981,23 @@
                 console.log('Loading DuckDB-WASM...');
                 const duckdb = await loadDuckDBWithTimeout();
 
-                // Step 2: Initialize DuckDB
+                // Step 2: Initialize DuckDB (real API: AsyncDuckDB + a bundle
+                // selected from jsDelivr, run inside a Worker -- there is no
+                // `duckdb.browser`/`duckdb.consoleLogger` in this package)
                 console.log('Initializing DuckDB...');
-                const browser = new duckdb.browser('', new duckdb.consoleLogger(1));
+                const bundles = duckdb.getJsDelivrBundles();
+                const bundle = await duckdb.selectBundle(bundles);
 
-                await browser.instantiate({
-                    path: 'duckdb.wasm',
-                });
+                const workerUrl = URL.createObjectURL(
+                    new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+                );
+                const worker = new Worker(workerUrl);
+                const logger = new duckdb.ConsoleLogger();
+                const asyncDb = new duckdb.AsyncDuckDB(logger, worker);
+                await asyncDb.instantiate(bundle.mainModule, bundle.pthreadWorker);
+                URL.revokeObjectURL(workerUrl);
 
-                const conn = await browser.connect();
+                const conn = await asyncDb.connect();
 
                 db = {
                     query: async (queryStr) => {
@@ -2199,9 +2054,9 @@
 
                 console.log(`Converted ${realListings.length} listings to internal format`);
 
-                // Replace mockListings with real data
-                mockListings.length = 0;
-                mockListings.push(...realListings);
+                // Replace listings with real data
+                listings.length = 0;
+                listings.push(...realListings);
 
                 const loadTime = Date.now() - startTime;
                 console.log(`Data loading complete in ${loadTime}ms`);
@@ -2239,159 +2094,51 @@
             }
         }
 
+        // Column names and units match pipeline/src/pipeline/parquet_writer.py's
+        // schema exactly (see docs/notes/hetzner-live-feed-schema-2026-08-06.md).
+        // All price_* fields are stored as EUR cents (see enricher.py docstrings
+        // -- "EUR cents per GB RAM" etc) and must be divided by 100 here; there
+        // is no cpu_model/cpu_cores/benchmark_multi/uplink_speed_mbit/ecc_memory
+        // column, those were fabricated names that silently defaulted to 0/false
+        // and never matched the real schema.
         function convertDuckDBResultToListings(result) {
             const rows = result.toArray();
             return rows.map(row => ({
-                id: row.listing_id || row.id,
-                cpu_model: row.cpu_model || row.cpu_raw || 'Unknown CPU',
-                cpu_cores: row.cpu_cores || 0,
+                id: row.listing_id,
+                cpu_model: row.cpu_normalized || row.cpu_raw || 'Unknown CPU',
+                cpu_cores: 0, // not present in the schema -- no per-core data in the feed
                 ram_gb: row.ram_gb || 0,
                 disks: parseDisksFromRow(row),
-                price_effective_monthly: (row.price_effective_monthly_cents || 0) / 100.0,
-                benchmark_multi: row.benchmark_multi || null,
-                benchmark_single: row.benchmark_single || null,
+                price_effective_monthly: (row.price_effective_monthly || 0) / 100,
+                benchmark_multi: row.multi_thread_score ?? null,
+                benchmark_single: row.single_thread_score ?? null,
                 benchmark_matched: row.benchmark_matched || false,
-                price_per_benchmark_point_multi: row.price_per_benchmark_point_multi || null,
-                price_per_benchmark_point_single: row.price_per_benchmark_point_single || null,
-                price_per_gb_ram: row.price_per_gb_ram || 0,
-                price_per_tb_disk: row.price_per_tb_disk || 0,
+                price_per_benchmark_point_multi: row.price_per_benchmark_point_multi != null
+                    ? row.price_per_benchmark_point_multi / 100 : null,
+                price_per_benchmark_point_single: row.price_per_benchmark_point_single != null
+                    ? row.price_per_benchmark_point_single / 100 : null,
+                price_per_gb_ram: (row.price_per_gb_ram || 0) / 100,
+                price_per_tb_disk: (row.price_per_tb_disk || 0) / 100,
                 location: row.location || 'unknown',
-                uplink_speed: row.uplink_speed_mbit || 0,
-                ecc_memory: row.ecc_memory || false
+                uplink_speed: row.uplink_speed || 0,
+                ecc_memory: row.ram_ecc || false
             }));
         }
 
+        // row.disks is a DuckDB LIST<STRUCT<type, count, capacity_gb>> --
+        // one entry per (type, per-drive capacity) group, count drives each.
+        // The dashboard's own shape is one entry per group with a total
+        // size_tb (count * capacity_gb), and a lowercase type matching the
+        // disk-type filter's option values (nvme/ssd/hdd); the feed's type
+        // strings are uppercase (e.g. "SSD").
         function parseDisksFromRow(row) {
-            // This would need to be adapted based on actual Parquet schema
-            if (row.disks && Array.isArray(row.disks)) {
-                return row.disks;
+            if (!row.disks || !Array.isArray(row.disks) || row.disks.length === 0) {
+                return [];
             }
-
-            // Fallback: parse from individual fields if available
-            const disks = [];
-            if (row.disk_type && row.disk_size_gb) {
-                disks.push({
-                    type: row.disk_type,
-                    size_gb: row.disk_size_gb,
-                    capacity_gb: row.disk_size_gb
-                });
-            }
-
-            return disks.length > 0 ? disks : [{ type: 'nvme', size_gb: 500, capacity_gb: 500 }];
-        }
-
-        function getFallbackMockData() {
-            // Return the original mock data
-            return [
-                {
-                    id: 1,
-                    cpu_model: "Ryzen 9 5950X",
-                    cpu_cores: 16,
-                    ram_gb: 128,
-                    disks: [{ type: "nvme", size_tb: 2 }],
-                    price_effective_monthly: 45.99,
-                    benchmark_multi: 51234,
-                    benchmark_single: 4287,
-                    benchmark_matched: true,
-                    price_per_benchmark_point_multi: 0.00090,
-                    price_per_benchmark_point_single: 0.01073,
-                    price_per_gb_ram: 0.36,
-                    price_per_tb_disk: 22.99,
-                    location: "fsn",
-                    uplink_speed: 1000,
-                    ecc_memory: false
-                },
-                {
-                    id: 2,
-                    cpu_model: "Xeon E5-2680 v4",
-                    cpu_cores: 14,
-                    ram_gb: 64,
-                    disks: [{ type: "hdd", size_tb: 4 }],
-                    price_effective_monthly: 28.50,
-                    benchmark_multi: 18907,
-                    benchmark_single: 2134,
-                    benchmark_matched: true,
-                    price_per_benchmark_point_multi: 0.00151,
-                    price_per_benchmark_point_single: 0.01335,
-                    price_per_gb_ram: 0.45,
-                    price_per_tb_disk: 7.13,
-                    location: "nbg",
-                    uplink_speed: 1000,
-                    ecc_memory: true
-                },
-                {
-                    id: 3,
-                    cpu_model: "Core i7-12700",
-                    cpu_cores: 12,
-                    ram_gb: 32,
-                    disks: [{ type: "nvme", size_tb: 1 }],
-                    price_effective_monthly: 22.75,
-                    benchmark_multi: 24843,
-                    benchmark_single: 3891,
-                    benchmark_matched: true,
-                    price_per_benchmark_point_multi: 0.00092,
-                    price_per_benchmark_point_single: 0.00585,
-                    price_per_gb_ram: 0.71,
-                    price_per_tb_disk: 22.75,
-                    location: "hel",
-                    uplink_speed: 100,
-                    ecc_memory: false
-                },
-                {
-                    id: 4,
-                    cpu_model: "Ryzen 7 5800X",
-                    cpu_cores: 8,
-                    ram_gb: 64,
-                    disks: [{ type: "nvme", size_tb: 1 }],
-                    price_effective_monthly: 38.25,
-                    benchmark_multi: 28756,
-                    benchmark_single: 3782,
-                    benchmark_matched: true,
-                    price_per_benchmark_point_multi: 0.00133,
-                    price_per_benchmark_point_single: 0.01012,
-                    price_per_gb_ram: 0.60,
-                    price_per_tb_disk: 38.25,
-                    location: "fsn",
-                    uplink_speed: 1000,
-                    ecc_memory: false
-                },
-                {
-                    id: 5,
-                    cpu_model: "Unknown CPU Model X",
-                    cpu_cores: 8,
-                    ram_gb: 32,
-                    disks: [{ type: "ssd", size_tb: 1 }],
-                    price_effective_monthly: 18.00,
-                    benchmark_multi: null,
-                    benchmark_single: null,
-                    benchmark_matched: false,
-                    price_per_benchmark_point_multi: null,
-                    price_per_benchmark_point_single: null,
-                    price_per_gb_ram: 0.56,
-                    price_per_tb_disk: 18.00,
-                    location: "nbg",
-                    uplink_speed: 100,
-                    ecc_memory: false
-                },
-                {
-                    id: 6,
-                    cpu_model: "Xeon E5-2690 v4",
-                    cpu_cores: 28,
-                    ram_gb: 128,
-                    disks: [{ type: "nvme", size_tb: 2 }],
-                    price_effective_monthly: 52.00,
-                    benchmark_multi: 34521,
-                    benchmark_single: 2589,
-                    benchmark_matched: true,
-                    price_per_benchmark_point_multi: 0.00151,
-                    price_per_benchmark_point_single: 0.02009,
-                    price_per_gb_ram: 0.41,
-                    price_per_tb_disk: 26.00,
-                    location: "hel",
-                    uplink_speed: 1000,
-                    ecc_memory: true
-                }
-            ];
+            return row.disks.map(d => ({
+                type: (d.type || 'unknown').toLowerCase(),
+                size_tb: (d.count || 1) * (d.capacity_gb || 0) / 1000
+            }));
         }
 
         // Initialize
@@ -2400,23 +2147,7 @@
             initStarterConfigs();
             updateSortDescription();
 
-            // Try to load real data with graceful fallback
-            // Set USE_REAL_DATA = true to attempt loading from DuckDB-WASM + Parquet
-            // Set USE_REAL_DATA = false to use mock data (for testing/demo)
-            const USE_REAL_DATA = true; // Enabled after verifying /current_snapshot.parquet is deployed (2026-08-06)
-
-            if (USE_REAL_DATA) {
-                try {
-                    await loadRealDataWithFallback();
-                } catch (error) {
-                    console.error('Even fallback failed:', error);
-                    // Show error and use hardcoded fallback
-                    showFallbackMode();
-                    const fallbackData = getFallbackMockData();
-                    mockListings.length = 0;
-                    mockListings.push(...fallbackData);
-                }
-            }
+            await loadRealDataWithFallback();
 
             // Try to restore filters from URL
             const restoredFromURL = restoreFiltersFromURL();
@@ -2448,25 +2179,17 @@
             console.log('Starting pipeline refresh at:', refreshStart.toISOString());
 
             try {
-                // Step 1: Fetch - Load auction data (with fallback to mock data)
-                const USE_REAL_DATA = true; // Enabled after verifying /current_snapshot.parquet is deployed (2026-08-06)
-                if (USE_REAL_DATA) {
-                    try {
-                        await loadRealDataWithFallback();
-                    } catch (error) {
-                        console.error('Failed to load real data, using fallback:', error);
-                        const fallbackData = getFallbackMockData();
-                        mockListings.length = 0;
-                        mockListings.push(...fallbackData);
-                    }
-                }
+                // Step 1: Fetch - Load real auction data. On failure this
+                // shows a real error state itself (see loadRealDataWithFallback)
+                // rather than throwing or substituting mock data.
+                await loadRealDataWithFallback();
 
                 // Step 2 & 3: Match & Compute
-                // Data is already processed in loadRealDataWithFallback or uses mock data
+                // Data is already processed in loadRealDataWithFallback
                 // The filterAndSortListings function handles matching and computing metrics
 
                 // Step 4: Write - Update in-memory listings data
-                // Data is already written to mockListings array
+                // Data is already written to listings array
 
                 // Step 5: Publish - Display the results with current filters
                 // Re-apply current filters to refresh the display with new data
@@ -2560,9 +2283,7 @@
                 await snapshotDiffManager.initialize();
                 console.log('Snapshot diff system ready');
 
-                // Process current mock listings to demonstrate the diff functionality
-                // In production, this would be called after loading real Parquet data
-                await snapshotDiffManager.processCurrentListings(mockListings);
+                await snapshotDiffManager.processCurrentListings(listings);
                 console.log('Snapshot diff analysis complete');
 
                 diffInitialized = true;
@@ -2570,7 +2291,7 @@
                 // Set up periodic diff refresh (every 5 minutes)
                 setInterval(async () => {
                     try {
-                        await snapshotDiffManager.processCurrentListings(mockListings);
+                        await snapshotDiffManager.processCurrentListings(listings);
                         console.log('Snapshot diff refreshed');
                     } catch (error) {
                         console.error('Failed to refresh diff:', error);
@@ -2597,7 +2318,7 @@
 
             // Refresh diff after filtering/sorting
             if (diffInitialized) {
-                snapshotDiffManager.processCurrentListings(mockListings).catch(err => {
+                snapshotDiffManager.processCurrentListings(listings).catch(err => {
                     console.error('Failed to update diff after filter:', err);
                 });
             }
@@ -2612,7 +2333,7 @@
             }
 
             try {
-                await snapshotDiffManager.processCurrentListings(mockListings);
+                await snapshotDiffManager.processCurrentListings(listings);
                 alert('Diff data refreshed successfully!');
             } catch (error) {
                 alert('Failed to refresh diff: ' + error.message);
