@@ -357,6 +357,17 @@
             display: table-cell;
         }
 
+        /* Cores/Threads are collapsed by default for the same reason --
+           toggled via #toggle-cores-threads-cols adding/removing
+           .show-cores on the table (see initCoresThreadsToggle()). */
+        .results-table .col-cores {
+            display: none;
+        }
+
+        .results-table.show-cores .col-cores {
+            display: table-cell;
+        }
+
         /* Results table -- overflow-x:auto on the wrapper (not body/html)
            keeps a wide table from ever causing page-level horizontal
            overflow, which previously broke position:fixed elements
@@ -789,9 +800,13 @@
                     <table class="results-table" id="results-table">
                         <thead>
                             <tr>
-                                <th class="sortable" data-sort="cpu_model">CPU <span class="sort-indicator" data-indicator="cpu_model"></span></th>
-                                <th class="sortable numeric" data-sort="cpu_cores">Cores <span class="sort-indicator" data-indicator="cpu_cores"></span></th>
-                                <th class="sortable numeric" data-sort="cpu_threads">Threads <span class="sort-indicator" data-indicator="cpu_threads"></span></th>
+                                <th class="sortable" data-sort="cpu_model">
+                                    CPU
+                                    <button type="button" id="toggle-cores-threads-cols" class="expand-icon-btn" aria-expanded="false" title="Show cores/threads columns">⇔</button>
+                                    <span class="sort-indicator" data-indicator="cpu_model"></span>
+                                </th>
+                                <th class="sortable numeric col-cores" data-sort="cpu_cores">Cores <span class="sort-indicator" data-indicator="cpu_cores"></span></th>
+                                <th class="sortable numeric col-cores" data-sort="cpu_threads">Threads <span class="sort-indicator" data-indicator="cpu_threads"></span></th>
                                 <th class="sortable numeric" data-sort="benchmark_multi">
                                     Benchmark (M)
                                     <button type="button" id="toggle-single-thread-cols" class="expand-icon-btn" aria-expanded="false" title="Show single-thread columns">⇔</button>
@@ -1587,8 +1602,8 @@
                             <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}</div>
                             ${cloudSub}
                         </td>
-                        <td class="numeric">${listing.cpu_cores ?? 'N/A'}</td>
-                        <td class="numeric">${listing.cpu_threads ?? 'N/A'}</td>
+                        <td class="numeric col-cores">${listing.cpu_cores ?? 'N/A'}</td>
+                        <td class="numeric col-cores">${listing.cpu_threads ?? 'N/A'}</td>
                         <td class="numeric ${scoreMultiClass}">${listing.benchmark_multi !== null ? listing.benchmark_multi.toLocaleString() : 'N/A'}</td>
                         <td class="numeric col-single ${scoreSingleClass}">${listing.benchmark_single !== null ? listing.benchmark_single.toLocaleString() : 'N/A'}</td>
                         <td class="numeric">${listing.ram_gb}GB${listing.ecc_memory ? ' (ECC)' : ''}</td>
@@ -1857,6 +1872,20 @@
                 const expanded = table.classList.toggle('show-single');
                 button.setAttribute('aria-expanded', String(expanded));
                 button.title = expanded ? 'Hide single-thread columns' : 'Show single-thread columns';
+            });
+        }
+
+        let coresThreadsToggleInitialized = false;
+        function initCoresThreadsToggle() {
+            if (coresThreadsToggleInitialized) return;
+            coresThreadsToggleInitialized = true;
+            const button = document.getElementById('toggle-cores-threads-cols');
+            const table = document.getElementById('results-table');
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const expanded = table.classList.toggle('show-cores');
+                button.setAttribute('aria-expanded', String(expanded));
+                button.title = expanded ? 'Hide cores/threads columns' : 'Show cores/threads columns';
             });
         }
 
@@ -2347,6 +2376,7 @@
         async function init() {
             initSortableHeaders();
             initColumnToggle();
+            initCoresThreadsToggle();
             await loadCloudPricing();
             initStarterConfigs();
             updateSortDescription();
