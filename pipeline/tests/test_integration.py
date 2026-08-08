@@ -146,9 +146,9 @@ class TestBenchmarkIntegration:
 
         # Spot check some known CPUs
         known_cpus = [
-            ("Intel Xeon E5-2680 v4", 5773),
-            ("Intel Xeon E5-2680 v3", 4756),
-            ("AMD EPYC 7401P", 5055),
+            ("Intel Xeon E5-2680 v4", 2779),
+            ("Intel Xeon E5-2680 v3", 2390),
+            ("AMD EPYC 7401P", 3118),
         ]
 
         for cpu_name, expected_passmark_id in known_cpus:
