@@ -2373,17 +2373,24 @@
 
         // row.disks is a DuckDB LIST<STRUCT<type, count, capacity_gb>> --
         // one entry per (type, per-drive capacity) group, count drives each.
-        // The dashboard's own shape keeps count/capacity_gb per group (so the
-        // UI can show the real configuration, e.g. "2x 512GB NVMe", not just
-        // a total) alongside a derived size_tb (count * capacity_gb) for the
-        // total/filter/sort paths, and a lowercase type matching the
+        // duckdb-wasm hands this back as a StructVector, NOT a plain Array --
+        // Array.isArray(row.disks) is false, so a naive isArray guard here
+        // silently drops every row's disks to [] with no error (confirmed via
+        // live CDP inspection: disksIsArray:false, disksConstructorName not
+        // Array). Array.from() works on both a real Array and a Vector
+        // (Vector implements Symbol.iterator), and its elements come out as
+        // plain objects with direct field access -- no further unwrapping
+        // needed. The dashboard's own shape keeps count/capacity_gb per group
+        // (so the UI can show the real configuration, e.g. "2x 512GB NVMe",
+        // not just a total) alongside a derived size_tb (count * capacity_gb)
+        // for the total/filter/sort paths, and a lowercase type matching the
         // disk-type filter's option values (nvme/ssd/hdd); the feed's type
         // strings are uppercase (e.g. "SSD").
         function parseDisksFromRow(row) {
-            if (!row.disks || !Array.isArray(row.disks) || row.disks.length === 0) {
-                return [];
-            }
-            return row.disks.map(d => ({
+            if (!row.disks) return [];
+            const diskArray = Array.from(row.disks);
+            if (diskArray.length === 0) return [];
+            return diskArray.map(d => ({
                 type: (d.type || 'unknown').toLowerCase(),
                 count: d.count || 1,
                 capacity_gb: d.capacity_gb || 0,
