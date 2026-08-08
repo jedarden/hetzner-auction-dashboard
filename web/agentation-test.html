@@ -130,14 +130,33 @@
     <!-- Agentation container - isolated from dashboard -->
     <div id="agentation-root"></div>
 
+    <!-- This import map is required, not cosmetic: agentation's own bundle
+         resolves React via an unpinned `react@>=18.0.0` specifier, which
+         is a different URL than this page's pinned `react@18.3.1` import
+         unless forced to match. Two different React module instances means
+         Agentation's hooks silently fail -- no console error, no toolbar,
+         nothing to indicate why. Confirmed broken without this (2026-08-08)
+         despite this file's original comment claiming the pattern worked. -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.3.1",
+            "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+            "react-dom": "https://esm.sh/react-dom@18.3.1",
+            "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+        }
+    }
+    </script>
     <!-- Load React 18 and agentation from CDN as ESM -->
     <script type="module">
         // Import React 18 from CDN (ESM)
-        import React from 'https://esm.sh/react@18.3.1';
-        import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+        import React from 'react';
+        import { createRoot } from 'react-dom/client';
 
-        // Import agentation from CDN (ESM)
-        import { Agentation } from 'https://esm.sh/agentation@3.0.2';
+        // Import agentation from CDN (ESM) -- ?external= makes it resolve
+        // React/ReactDOM via the import map above instead of bundling its
+        // own (mismatched) copy
+        import { Agentation } from 'https://esm.sh/agentation@3.0.2?external=react,react-dom';
 
         // Mount agentation in its own isolated root
         const agentationRoot = document.getElementById('agentation-root');

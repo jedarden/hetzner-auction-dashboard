@@ -2365,13 +2365,32 @@
     <!-- Agentation: UI feedback toolbar, isolated from the dashboard's own
          plain HTML/JS (no bundler here, so React is loaded as ESM from a
          CDN just for this). Removing this block has zero effect on the
-         dashboard above. See web/agentation-test.html for the pattern this
-         was proven against. -->
+         dashboard above.
+
+         The import map + `?external=react,react-dom` on the agentation
+         import are required, not cosmetic: without them, agentation's own
+         bundle resolves React via an unpinned `react@>=18.0.0` specifier
+         while this page pins `react@18.3.1` -- two different URLs, so the
+         browser loads two separate React instances and Agentation's hooks
+         silently fail to render anything (no console error, no toolbar).
+         The import map forces both this page's imports and agentation's
+         externalized bare `"react"`/`"react-dom"` imports to resolve to
+         the exact same module, giving them one real singleton instance. -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.3.1",
+            "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+            "react-dom": "https://esm.sh/react-dom@18.3.1",
+            "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+        }
+    }
+    </script>
     <div id="agentation-root"></div>
     <script type="module">
-        import React from 'https://esm.sh/react@18.3.1';
-        import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
-        import { Agentation } from 'https://esm.sh/agentation@3.0.2';
+        import React from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Agentation } from 'https://esm.sh/agentation@3.0.2?external=react,react-dom';
 
         const root = createRoot(document.getElementById('agentation-root'));
         root.render(React.createElement(Agentation));
