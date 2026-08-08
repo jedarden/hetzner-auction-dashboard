@@ -101,3 +101,62 @@ i7-12700K,Intel Core i7-12700K
 Intel Core i5-12600K,Intel Core i5-12600K
 Core i5-12600K,Intel Core i5-12600K
 i5-12600K,Intel Core i5-12600K
+
+# Intel Core aliases (6th-9th gen, common Hetzner auction desktop CPUs)
+Intel Core i7-6700,Intel Core i7-6700
+Core i7-6700,Intel Core i7-6700
+i7-6700,Intel Core i7-6700
+Intel Core i7-7700,Intel Core i7-7700
+Core i7-7700,Intel Core i7-7700
+i7-7700,Intel Core i7-7700
+Intel Core i7-8700,Intel Core i7-8700
+Core i7-8700,Intel Core i7-8700
+i7-8700,Intel Core i7-8700
+Intel Core i9-9900K,Intel Core i9-9900K
+Core i9-9900K,Intel Core i9-9900K
+i9-9900K,Intel Core i9-9900K
+
+# AMD Ryzen aliases (1000/3000 series, common Hetzner auction CPUs)
+AMD Ryzen 7 1700X,AMD Ryzen 7 1700X
+Ryzen 7 1700X,AMD Ryzen 7 1700X
+AMD Ryzen 7 PRO 1700X,AMD Ryzen 7 PRO 1700X
+Ryzen 7 PRO 1700X,AMD Ryzen 7 PRO 1700X
+AMD Ryzen 5 3600,AMD Ryzen 5 3600
+Ryzen 5 3600,AMD Ryzen 5 3600
+AMD Ryzen 7 3700X,AMD Ryzen 7 3700X
+Ryzen 7 3700X,AMD Ryzen 7 3700X
+AMD Ryzen 9 3900,AMD Ryzen 9 3900
+Ryzen 9 3900,AMD Ryzen 9 3900
+
+# Xeon E5-1650 v3 aliases (single-socket LGA2011-v3 workstation Xeon)
+Intel Xeon E5-1650 v3,Intel Xeon E5-1650 v3
+Xeon E5-1650 v3,Intel Xeon E5-1650 v3
+E5-1650 v3,Intel Xeon E5-1650 v3
+E5-1650v3,Intel Xeon E5-1650 v3
+Intel Xeon E5-1650v3,Intel Xeon E5-1650 v3
+Intel Xeon E5-1650V3,Intel Xeon E5-1650 v3
+E5-1650V3,Intel Xeon E5-1650 v3
+
+# Xeon E3-1275 v5 aliases (entry single-socket workstation Xeon)
+Intel Xeon E3-1275 v5,Intel Xeon E3-1275 v5
+Xeon E3-1275 v5,Intel Xeon E3-1275 v5
+E3-1275 v5,Intel Xeon E3-1275 v5
+E3-1275v5,Intel Xeon E3-1275 v5
+Intel Xeon E3-1275v5,Intel Xeon E3-1275 v5
+
+# Xeon E-21xxG entry workstation Xeon aliases
+Intel Xeon E-2176G,Intel Xeon E-2176G
+Xeon E-2176G,Intel Xeon E-2176G
+Intel XEON E-2176G,Intel Xeon E-2176G
+Intel Xeon E-2276G,Intel Xeon E-2276G
+Xeon E-2276G,Intel Xeon E-2276G
+Intel XEON E-2276G,Intel Xeon E-2276G
+
+# Xeon W-2145 aliases
+Intel Xeon W-2145,Intel Xeon W-2145
+Xeon W-2145,Intel Xeon W-2145
+W-2145,Intel Xeon W-2145
+
+# Xeon Gold 5412U aliases
+Intel Xeon Gold 5412U,Intel Xeon Gold 5412U
+Xeon Gold 5412U,Intel Xeon Gold 5412U
