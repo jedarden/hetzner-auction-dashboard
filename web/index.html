@@ -309,33 +309,39 @@
             color: #6c757d;
         }
 
-        .expand-columns-btn {
+        /* Inline expand/collapse icon, sitting inside the "Benchmark (M)"
+           header alongside its title rather than as a standalone button
+           above the table -- it toggles that column's sibling Single-
+           thread columns into view. Its own click is stopped from
+           bubbling to the <th> (see initColumnToggle()) so it doesn't
+           also trigger a sort. */
+        .expand-icon-btn {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            margin-bottom: 10px;
-            padding: 8px 14px;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            margin-left: 4px;
+            padding: 0;
             border: 1px solid #ced4da;
-            border-radius: 6px;
+            border-radius: 4px;
             background: #fff;
             color: #495057;
-            font-size: 0.85rem;
-            font-weight: 600;
+            font-size: 0.75rem;
+            line-height: 1;
             cursor: pointer;
+            vertical-align: middle;
+            text-transform: none;
         }
 
-        .expand-columns-btn:hover {
-            background: #f8f9fa;
+        .expand-icon-btn:hover {
+            background: #f1f3f5;
         }
 
-        .expand-columns-btn[aria-expanded="true"] {
+        .expand-icon-btn[aria-expanded="true"] {
             background: #e7f0ff;
             border-color: #4c6ef5;
             color: #364fc7;
-        }
-
-        .expand-icon {
-            font-size: 0.9rem;
         }
 
         /* Single-thread columns are collapsed by default -- most listings
@@ -779,21 +785,24 @@
                 Showing <span id="results-count">0</span> listings • Sorted by: <span id="current-sort">Value (multi-thread)</span>
             </div>
             <div id="listings-container">
-                <button type="button" id="toggle-single-thread-cols" class="expand-columns-btn" aria-expanded="false">
-                    <span class="expand-icon">⇔</span> Show single-thread columns
-                </button>
                 <div class="results-table-wrapper">
                     <table class="results-table" id="results-table">
                         <thead>
                             <tr>
                                 <th class="sortable" data-sort="cpu_model">CPU <span class="sort-indicator" data-indicator="cpu_model"></span></th>
+                                <th class="sortable numeric" data-sort="cpu_cores">Cores <span class="sort-indicator" data-indicator="cpu_cores"></span></th>
+                                <th class="sortable numeric" data-sort="cpu_threads">Threads <span class="sort-indicator" data-indicator="cpu_threads"></span></th>
+                                <th class="sortable numeric" data-sort="benchmark_multi">
+                                    Benchmark (M)
+                                    <button type="button" id="toggle-single-thread-cols" class="expand-icon-btn" aria-expanded="false" title="Show single-thread columns">⇔</button>
+                                    <span class="sort-indicator" data-indicator="benchmark_multi"></span>
+                                </th>
+                                <th class="sortable numeric col-single" data-sort="benchmark_single">Benchmark (S) <span class="sort-indicator" data-indicator="benchmark_single"></span></th>
                                 <th class="sortable numeric" data-sort="ram_gb">RAM <span class="sort-indicator" data-indicator="ram_gb"></span></th>
                                 <th class="sortable numeric" data-sort="disk_size">Disk <span class="sort-indicator" data-indicator="disk_size"></span></th>
                                 <th class="sortable" data-sort="location">Location <span class="sort-indicator" data-indicator="location"></span></th>
                                 <th class="sortable numeric" data-sort="uplink_speed">Uplink <span class="sort-indicator" data-indicator="uplink_speed"></span></th>
                                 <th class="sortable numeric" data-sort="price_effective_monthly">Price/mo <span class="sort-indicator" data-indicator="price_effective_monthly"></span></th>
-                                <th class="sortable numeric" data-sort="benchmark_multi">Benchmark (M) <span class="sort-indicator" data-indicator="benchmark_multi"></span></th>
-                                <th class="sortable numeric col-single" data-sort="benchmark_single">Benchmark (S) <span class="sort-indicator" data-indicator="benchmark_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_benchmark_point_multi">€/Bench (M) <span class="sort-indicator" data-indicator="price_per_benchmark_point_multi"></span></th>
                                 <th class="sortable numeric col-single" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
@@ -1489,6 +1498,16 @@
                     case 'ram_gb':
                         comparison = a.ram_gb - b.ram_gb;
                         break;
+                    case 'cpu_cores':
+                        if (a.cpu_cores === null) comparison = -1;
+                        else if (b.cpu_cores === null) comparison = 1;
+                        else comparison = a.cpu_cores - b.cpu_cores;
+                        break;
+                    case 'cpu_threads':
+                        if (a.cpu_threads === null) comparison = -1;
+                        else if (b.cpu_threads === null) comparison = 1;
+                        else comparison = a.cpu_threads - b.cpu_threads;
+                        break;
                     case 'uplink_speed':
                         comparison = (a.uplink_speed || 0) - (b.uplink_speed || 0);
                         break;
@@ -1568,13 +1587,15 @@
                             <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}</div>
                             ${cloudSub}
                         </td>
+                        <td class="numeric">${listing.cpu_cores ?? 'N/A'}</td>
+                        <td class="numeric">${listing.cpu_threads ?? 'N/A'}</td>
+                        <td class="numeric ${scoreMultiClass}">${listing.benchmark_multi !== null ? listing.benchmark_multi.toLocaleString() : 'N/A'}</td>
+                        <td class="numeric col-single ${scoreSingleClass}">${listing.benchmark_single !== null ? listing.benchmark_single.toLocaleString() : 'N/A'}</td>
                         <td class="numeric">${listing.ram_gb}GB${listing.ecc_memory ? ' (ECC)' : ''}</td>
                         <td class="numeric">${totalDiskSize}TB ${diskTypes}</td>
                         <td>${getLocationLabel(listing.location)}</td>
                         <td class="numeric">${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'}</td>
                         <td class="numeric price-cell">€${listing.price_effective_monthly.toFixed(2)}</td>
-                        <td class="numeric ${scoreMultiClass}">${listing.benchmark_multi !== null ? listing.benchmark_multi.toLocaleString() : 'N/A'}</td>
-                        <td class="numeric col-single ${scoreSingleClass}">${listing.benchmark_single !== null ? listing.benchmark_single.toLocaleString() : 'N/A'}</td>
                         <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
@@ -1615,7 +1636,9 @@
                 uplink_speed: 'Uplink speed',
                 cpu_model: 'CPU model',
                 benchmark_multi: 'Benchmark score (multi-thread)',
-                benchmark_single: 'Benchmark score (single-thread)'
+                benchmark_single: 'Benchmark score (single-thread)',
+                cpu_cores: 'CPU cores',
+                cpu_threads: 'CPU threads'
             };
             const directionArrow = currentSortDirection === 'asc' ? '↑' : '↓';
             document.getElementById('current-sort').textContent = `${labels[sortBy] || sortBy} ${directionArrow}`;
@@ -1827,12 +1850,13 @@
             columnToggleInitialized = true;
             const button = document.getElementById('toggle-single-thread-cols');
             const table = document.getElementById('results-table');
-            button.addEventListener('click', () => {
+            button.addEventListener('click', (e) => {
+                // The button lives inside a sortable <th>; without this the
+                // click would bubble up and also trigger a sort-by-column.
+                e.stopPropagation();
                 const expanded = table.classList.toggle('show-single');
                 button.setAttribute('aria-expanded', String(expanded));
-                button.innerHTML = expanded
-                    ? '<span class="expand-icon">⇔</span> Hide single-thread columns'
-                    : '<span class="expand-icon">⇔</span> Show single-thread columns';
+                button.title = expanded ? 'Hide single-thread columns' : 'Show single-thread columns';
             });
         }
 
@@ -2272,15 +2296,19 @@
         // schema exactly (see docs/notes/hetzner-live-feed-schema-2026-08-06.md).
         // All price_* fields are stored as EUR cents (see enricher.py docstrings
         // -- "EUR cents per GB RAM" etc) and must be divided by 100 here; there
-        // is no cpu_model/cpu_cores/benchmark_multi/uplink_speed_mbit/ecc_memory
-        // column, those were fabricated names that silently defaulted to 0/false
-        // and never matched the real schema.
+        // is no cpu_model/benchmark_multi/uplink_speed_mbit/ecc_memory column,
+        // those were fabricated names that silently defaulted to 0/false and
+        // never matched the real schema.
         function convertDuckDBResultToListings(result) {
             const rows = result.toArray();
             return rows.map(row => ({
                 id: row.listing_id,
                 cpu_model: row.cpu_normalized || row.cpu_raw || 'Unknown CPU',
-                cpu_cores: 0, // not present in the schema -- no per-core data in the feed
+                // cpu_cores also feeds findEquivalentCloudInstance's core-count
+                // matching (previously always 0 before cpu_cores/cpu_threads
+                // existed in the schema, added 2026-08-08).
+                cpu_cores: row.cpu_cores ?? null,
+                cpu_threads: row.cpu_threads ?? null,
                 ram_gb: row.ram_gb || 0,
                 disks: parseDisksFromRow(row),
                 price_effective_monthly: (row.price_effective_monthly || 0) / 100,
