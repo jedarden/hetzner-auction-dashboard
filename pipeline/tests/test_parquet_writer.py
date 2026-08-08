@@ -89,6 +89,8 @@ class TestParquetSchema:
                 "passmark_id",
                 "single_thread_score",
                 "multi_thread_score",
+                "cpu_cores",
+                "cpu_threads",
                 "benchmark_match_method",
                 "ram_gb",
                 "ram_ecc",
@@ -399,6 +401,8 @@ def _make_sample_listing(
         passmark_id=passmark_id,
         single_thread_score=single_thread_score,
         multi_thread_score=multi_thread_score,
+        cores=None,
+        threads=None,
         match_method=benchmark_match_method,
     )
 

@@ -50,6 +50,8 @@ class EnrichedListing:
     passmark_id: Optional[int]  # PassMark CPU ID (or None if unmatched)
     single_thread_score: Optional[int]  # Single-thread score (or None if unmatched)
     multi_thread_score: Optional[int]  # Multi-thread score (or None if unmatched)
+    cpu_cores: Optional[int]  # Physical core count (or None if unmatched/unresolved)
+    cpu_threads: Optional[int]  # Thread count (or None if unmatched/unresolved)
     benchmark_match_method: Optional[str]  # How match was made: direct/alias/override
     ram_gb: int
     ram_ecc: bool
@@ -122,6 +124,8 @@ class CostMetricsEnricher:
             passmark_id=cpu_match.passmark_id,
             single_thread_score=cpu_match.single_thread_score,
             multi_thread_score=cpu_match.multi_thread_score,
+            cpu_cores=cpu_match.cores,
+            cpu_threads=cpu_match.threads,
             benchmark_match_method=cpu_match.match_method,
             ram_gb=listing.ram_gb,
             ram_ecc=listing.ram_ecc,

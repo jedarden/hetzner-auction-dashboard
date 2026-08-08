@@ -294,6 +294,8 @@ class TestCpuMatcherFunctionality:
             passmark_id=1234,
             single_thread_score=1000,
             multi_thread_score=10000,
+            cores=None,
+            threads=None,
             matched=True,
             match_method="direct",
         )

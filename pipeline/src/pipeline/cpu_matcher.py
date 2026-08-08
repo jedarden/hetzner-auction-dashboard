@@ -27,6 +27,8 @@ class BenchmarkMatch:
     passmark_id: Optional[int]  # PassMark CPU ID
     single_thread_score: Optional[int]  # PassMark single-thread score
     multi_thread_score: Optional[int]  # PassMark multi-thread score
+    cores: Optional[int]  # Physical core count (from PassMark reference data)
+    threads: Optional[int]  # Thread count (from PassMark reference data)
     matched: bool  # Whether a match was found
     match_method: Optional[str]  # How the match was made: "direct", "alias", "override"
 
@@ -71,6 +73,13 @@ class CpuMatcher:
             logger.warning(f"Reference table not found at {reference_path}")
             return
 
+        def _optional_int(value: Optional[str]) -> Optional[int]:
+            # cores/threads are a later addition to the schema; older rows
+            # or ones a lookup couldn't resolve may have this blank.
+            if value is None or value.strip() == "":
+                return None
+            return int(value)
+
         try:
             with open(reference_path, "r", encoding="utf-8") as f:
                 reader = csv.DictReader(f)
@@ -80,6 +89,8 @@ class CpuMatcher:
                         "passmark_id": int(row["passmark_id"]),
                         "single_thread_score": int(row["single_thread_score"]),
                         "multi_thread_score": int(row["multi_thread_score"]),
+                        "cores": _optional_int(row.get("cores")),
+                        "threads": _optional_int(row.get("threads")),
                     }
 
             logger.info(f"Loaded {len(self.reference_table)} CPUs from reference table")
@@ -190,6 +201,8 @@ class CpuMatcher:
                 passmark_id=None,
                 single_thread_score=None,
                 multi_thread_score=None,
+                cores=None,
+                threads=None,
                 matched=False,
                 match_method=None,
             )
@@ -204,6 +217,8 @@ class CpuMatcher:
                 passmark_id=data["passmark_id"],
                 single_thread_score=data["single_thread_score"],
                 multi_thread_score=data["multi_thread_score"],
+                cores=data["cores"],
+                threads=data["threads"],
                 matched=True,
                 match_method="direct",
             )
@@ -220,6 +235,8 @@ class CpuMatcher:
                     passmark_id=data["passmark_id"],
                     single_thread_score=data["single_thread_score"],
                     multi_thread_score=data["multi_thread_score"],
+                    cores=data["cores"],
+                    threads=data["threads"],
                     matched=True,
                     match_method="alias",
                 )
@@ -237,6 +254,8 @@ class CpuMatcher:
                         passmark_id=passmark_id,
                         single_thread_score=data["single_thread_score"],
                         multi_thread_score=data["multi_thread_score"],
+                        cores=data["cores"],
+                        threads=data["threads"],
                         matched=True,
                         match_method="override",
                     )
@@ -251,6 +270,8 @@ class CpuMatcher:
             passmark_id=None,
             single_thread_score=None,
             multi_thread_score=None,
+            cores=None,
+            threads=None,
             matched=False,
             match_method=None,
         )
