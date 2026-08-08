@@ -309,97 +309,104 @@
             color: #6c757d;
         }
 
-        .listing {
+        /* Results table -- overflow-x:auto on the wrapper (not body/html)
+           keeps a wide table from ever causing page-level horizontal
+           overflow, which previously broke position:fixed elements
+           elsewhere on the page (see .sort-selector select's min-width
+           fix). Never remove that containment without re-checking that. */
+        .results-table-wrapper {
+            overflow-x: auto;
             border: 1px solid #e9ecef;
             border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-            background: #fff;
-            transition: box-shadow 0.2s;
+            -webkit-overflow-scrolling: touch;
         }
 
-        .listing:hover {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-
-        .listing-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 15px;
-        }
-
-        .listing-title {
-            flex: 1;
-        }
-
-        .listing-title h3 {
-            font-size: 1.2rem;
-            color: #1a1a1a;
-            margin-bottom: 5px;
-        }
-
-        .listing-specs {
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
             font-size: 0.9rem;
-            color: #6c757d;
+            white-space: nowrap;
         }
 
-        .listing-price {
-            text-align: right;
+        .results-table th,
+        .results-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
         }
 
-        .price {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #228be6;
+        .results-table tbody tr:last-child td {
+            border-bottom: none;
         }
 
-        .price-period {
-            font-size: 0.85rem;
-            color: #6c757d;
+        .results-table tbody tr:hover {
+            background: #f8f9fa;
         }
 
-        .listing-metrics {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #e9ecef;
-        }
-
-        .metric {
-            text-align: center;
-        }
-
-        .metric-label {
+        .results-table th {
+            background: #f8f9fa;
             font-size: 0.75rem;
             color: #6c757d;
             text-transform: uppercase;
             font-weight: 600;
-            margin-bottom: 5px;
         }
 
-        .metric-value {
-            font-size: 1.1rem;
+        .results-table th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .results-table th.sortable:hover {
+            color: #1a1a1a;
+        }
+
+        .results-table th.numeric,
+        .results-table td.numeric {
+            text-align: right;
+        }
+
+        .sort-indicator {
+            display: inline-block;
+            margin-left: 4px;
+            opacity: 0.35;
+            font-size: 0.7rem;
+        }
+
+        .sort-indicator.active {
+            opacity: 1;
+            color: #228be6;
+        }
+
+        .results-table .cpu-cell {
+            white-space: normal;
+            min-width: 200px;
+        }
+
+        .results-table .cpu-name {
             font-weight: 600;
             color: #1a1a1a;
         }
 
-        .metric-value.good {
-            color: #2f9e44;
+        .results-table .cpu-sub {
+            font-size: 0.75rem;
+            color: #6c757d;
+            margin-top: 3px;
         }
 
-        .metric-value.unscored {
+        .results-table .price-cell {
+            font-weight: 700;
+            color: #228be6;
+            font-size: 1rem;
+        }
+
+        .results-table .metric-good {
+            color: #2f9e44;
+            font-weight: 600;
+        }
+
+        .results-table .metric-unscored {
             color: #868e96;
             font-style: italic;
-        }
-
-        .listing-footer {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #e9ecef;
-            text-align: right;
         }
 
         .hetzner-link {
@@ -423,22 +430,6 @@
             font-size: 0.75rem;
             font-weight: 600;
             margin-left: 10px;
-        }
-
-        .cloud-comparison {
-            display: inline-block;
-            background: #e3f2e9;
-            color: #2b8a3e;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 10px;
-        }
-
-        .cloud-comparison.unavailable {
-            background: #fff3bf;
-            color: #856404;
         }
 
         .staleness-indicator {
@@ -599,13 +590,13 @@
                 grid-template-columns: 1fr;
             }
 
-            .listing-header {
-                flex-direction: column;
-                gap: 15px;
+            .results-table {
+                font-size: 0.8rem;
             }
 
-            .listing-price {
-                text-align: left;
+            .results-table th,
+            .results-table td {
+                padding: 10px 12px;
             }
         }
     </style>
@@ -746,7 +737,29 @@
                 Showing <span id="results-count">0</span> listings • Sorted by: <span id="current-sort">Value (multi-thread)</span>
             </div>
             <div id="listings-container">
-                <!-- Listings will be displayed here -->
+                <div class="results-table-wrapper">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="cpu_model">CPU <span class="sort-indicator" data-indicator="cpu_model"></span></th>
+                                <th class="sortable numeric" data-sort="ram_gb">RAM <span class="sort-indicator" data-indicator="ram_gb"></span></th>
+                                <th class="sortable numeric" data-sort="disk_size">Disk <span class="sort-indicator" data-indicator="disk_size"></span></th>
+                                <th class="sortable" data-sort="location">Location <span class="sort-indicator" data-indicator="location"></span></th>
+                                <th class="sortable numeric" data-sort="uplink_speed">Uplink <span class="sort-indicator" data-indicator="uplink_speed"></span></th>
+                                <th class="sortable numeric" data-sort="price_effective_monthly">Price/mo <span class="sort-indicator" data-indicator="price_effective_monthly"></span></th>
+                                <th class="sortable numeric" data-sort="price_per_benchmark_point_multi">€/Bench (M) <span class="sort-indicator" data-indicator="price_per_benchmark_point_multi"></span></th>
+                                <th class="sortable numeric" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
+                                <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
+                                <th class="sortable numeric" data-sort="price_per_tb_disk">€/TB Disk <span class="sort-indicator" data-indicator="price_per_tb_disk"></span></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-tbody">
+                            <!-- Listings will be displayed here -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="no-results-message" style="display: none; text-align: center; padding: 40px; color: #6c757d;">No listings match your filters. Try adjusting your criteria.</div>
             </div>
         </div>
     </div>
@@ -908,6 +921,7 @@
 
         let currentPreset = null;
         let userSortAxis = 'auto'; // 'auto' means use preset's default, otherwise specific sort field
+        let currentSortDirection = 'asc'; // persists across re-filters; only changes on an explicit sort action
         let bestDealMode = false; // Track if we're showing only the best deal
         let isInitializingFromURL = false; // Track if we're currently initializing from URL
 
@@ -923,6 +937,9 @@
             // Serialize user sort axis
             if (userSortAxis !== 'auto') {
                 params.set('sort', userSortAxis);
+                if (currentSortDirection !== 'asc') {
+                    params.set('dir', currentSortDirection);
+                }
             }
 
             // Serialize individual filter values
@@ -1006,7 +1023,11 @@
                 // Restore user sort axis if present
                 if (params.has('sort')) {
                     userSortAxis = params.get('sort');
-                    document.getElementById('sort-axis').value = userSortAxis;
+                    const sortAxisSelect = document.getElementById('sort-axis');
+                    if (sortAxisSelect.querySelector(`option[value="${userSortAxis}"]`)) {
+                        sortAxisSelect.value = userSortAxis;
+                    }
+                    currentSortDirection = params.get('dir') === 'desc' ? 'desc' : 'asc';
                 }
 
                 // Check if preset is specified
@@ -1307,12 +1328,26 @@
         }
 
         // Filter and sort listings based on current filters
-        function filterAndSortListings(presetSortBy = 'price_per_benchmark_point_multi', sortDirection = 'asc') {
+        // Total disk capacity in TB for a listing (count * capacity_gb per
+        // disk group, summed). Shared by filtering, sorting, and rendering.
+        function getTotalDiskSize(listing) {
+            return listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
+        }
+
+        function filterAndSortListings(presetSortBy = 'price_per_benchmark_point_multi', explicitDirection = null) {
             // Determine effective sort method based on user selection
             let sortBy = presetSortBy;
             if (userSortAxis !== 'auto') {
                 sortBy = userSortAxis;
             }
+            // A direction passed explicitly (preset apply, column click, or
+            // the initial default call) persists as the current direction;
+            // a bare call (e.g. re-filtering after a checkbox change) reuses
+            // whatever direction was last set instead of resetting to asc.
+            if (explicitDirection !== null) {
+                currentSortDirection = explicitDirection;
+            }
+            const sortDirection = currentSortDirection;
             const filters = {
                 cpu_family: document.getElementById('cpu-family').value,
                 cpu_model: document.getElementById('cpu-model').value.trim().toLowerCase(),
@@ -1352,8 +1387,7 @@
                 }
 
                 // Disk size filter
-                const totalDiskSize = listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
-                if (totalDiskSize < filters.min_disk) return false;
+                if (getTotalDiskSize(listing) < filters.min_disk) return false;
 
                 // Location filter
                 if (filters.location && listing.location !== filters.location) return false;
@@ -1395,6 +1429,22 @@
                     case 'price_per_tb_disk':
                         comparison = a.price_per_tb_disk - b.price_per_tb_disk;
                         break;
+                    case 'ram_gb':
+                        comparison = a.ram_gb - b.ram_gb;
+                        break;
+                    case 'uplink_speed':
+                        comparison = (a.uplink_speed || 0) - (b.uplink_speed || 0);
+                        break;
+                    case 'disk_size':
+                        comparison = getTotalDiskSize(a) - getTotalDiskSize(b);
+                        break;
+                    case 'location':
+                        comparison = getLocationLabel(a.location).localeCompare(getLocationLabel(b.location));
+                        break;
+                    case 'cpu_model':
+                        comparison = a.cpu_model.localeCompare(b.cpu_model);
+                        break;
+                    case 'price_effective_monthly':
                     default:
                         comparison = a.price_effective_monthly - b.price_effective_monthly;
                 }
@@ -1405,23 +1455,29 @@
             // Update UI
             displayListings(filtered);
             updateSortLabel(sortBy);
+            updateSortIndicators(sortBy, sortDirection);
         }
 
         // Display listings in the UI
         function displayListings(listings) {
-            const container = document.getElementById('listings-container');
+            const tbody = document.getElementById('results-tbody');
+            const wrapper = document.querySelector('.results-table-wrapper');
+            const noResultsEl = document.getElementById('no-results-message');
             const countEl = document.getElementById('results-count');
 
             countEl.textContent = listings.length;
-            container.innerHTML = '';
 
             if (listings.length === 0) {
-                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #6c757d;">No listings match your filters. Try adjusting your criteria.</div>';
+                tbody.innerHTML = '';
+                wrapper.style.display = 'none';
+                noResultsEl.style.display = 'block';
                 return;
             }
+            wrapper.style.display = 'block';
+            noResultsEl.style.display = 'none';
 
-            listings.forEach(listing => {
-                const totalDiskSize = listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
+            tbody.innerHTML = listings.map(listing => {
+                const totalDiskSize = getTotalDiskSize(listing);
                 const diskTypes = listing.disks.map(d => {
                     const typeLabels = { nvme: 'NVMe', ssd: 'SATA SSD', hdd: 'HDD' };
                     return typeLabels[d.type] || d.type.toUpperCase();
@@ -1433,71 +1489,39 @@
                     ? calculateCloudSavings(listing.price_effective_monthly, cloudEquivalent.price_monthly)
                     : null;
 
-                const listingElement = document.createElement('div');
-                listingElement.className = 'listing';
-
                 const unscoredBadge = listing.benchmark_matched ? '' : '<span class="unscored-badge">Unscored</span>';
 
-                // Cloud comparison badge
-                let cloudBadge = '';
+                // Cloud comparison note, shown under the CPU name
+                let cloudSub = '';
                 if (cloudSavings !== null) {
-                    const cloudClass = parseFloat(cloudSavings) > 0 ? 'cloud-comparison' : 'cloud-comparison unavailable';
                     const cloudText = parseFloat(cloudSavings) > 0
                         ? `${cloudSavings}% cheaper than Hetzner Cloud ${cloudEquivalent.name}`
                         : `Similar price to Hetzner Cloud ${cloudEquivalent.name}`;
-                    cloudBadge = `<span class="${cloudClass}">${cloudText}</span>`;
+                    cloudSub = `<div class="cpu-sub">${cloudText}</div>`;
                 }
 
-                const benchmarkMultiClass = listing.price_per_benchmark_point_multi !== null ? 'good' : 'unscored';
-                const benchmarkSingleClass = listing.price_per_benchmark_point_single !== null ? 'good' : 'unscored';
+                const benchmarkMultiClass = listing.price_per_benchmark_point_multi !== null ? 'metric-good' : 'metric-unscored';
+                const benchmarkSingleClass = listing.price_per_benchmark_point_single !== null ? 'metric-good' : 'metric-unscored';
 
-                listingElement.innerHTML = `
-                    <div class="listing-header">
-                        <div class="listing-title">
-                            <h3>${listing.cpu_model} ${unscoredBadge}</h3>
-                            <div class="listing-specs">
-                                ${listing.ram_gb}GB RAM ${listing.ecc_memory ? '(ECC)' : ''} • ${totalDiskSize}TB ${diskTypes} • ${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'} • ${getLocationLabel(listing.location)}
-                            </div>
-                            ${cloudBadge}
-                        </div>
-                        <div class="listing-price">
-                            <div class="price">€${listing.price_effective_monthly.toFixed(2)}</div>
-                            <div class="price-period">per month</div>
-                        </div>
-                    </div>
-                    <div class="listing-metrics">
-                        <div class="metric">
-                            <div class="metric-label">€/Benchmark (Multi)</div>
-                            <div class="metric-value ${benchmarkMultiClass}">
-                                ${listing.price_per_benchmark_point_multi !== null
-                                    ? listing.price_per_benchmark_point_multi.toFixed(5)
-                                    : 'N/A'}
-                            </div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">€/Benchmark (Single)</div>
-                            <div class="metric-value ${benchmarkSingleClass}">
-                                ${listing.price_per_benchmark_point_single !== null
-                                    ? listing.price_per_benchmark_point_single.toFixed(5)
-                                    : 'N/A'}
-                            </div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">€/GB RAM</div>
-                            <div class="metric-value">€${listing.price_per_gb_ram.toFixed(2)}</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-label">€/TB Disk</div>
-                            <div class="metric-value">€${listing.price_per_tb_disk.toFixed(2)}</div>
-                        </div>
-                    </div>
-                    <div class="listing-footer">
-                        <a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer">View on Hetzner Server Auction &rarr;</a>
-                    </div>
+                return `
+                    <tr>
+                        <td class="cpu-cell">
+                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}</div>
+                            ${cloudSub}
+                        </td>
+                        <td class="numeric">${listing.ram_gb}GB${listing.ecc_memory ? ' (ECC)' : ''}</td>
+                        <td class="numeric">${totalDiskSize}TB ${diskTypes}</td>
+                        <td>${getLocationLabel(listing.location)}</td>
+                        <td class="numeric">${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'}</td>
+                        <td class="numeric price-cell">€${listing.price_effective_monthly.toFixed(2)}</td>
+                        <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
+                        <td class="numeric ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
+                        <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
+                        <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
+                        <td><a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer">View &rarr;</a></td>
+                    </tr>
                 `;
-
-                container.appendChild(listingElement);
-            });
+            }).join('');
         }
 
         // Get location label
@@ -1522,9 +1546,30 @@
                 price_per_benchmark_point_multi: 'Value (multi-thread)',
                 price_per_benchmark_point_single: 'Value (single-thread)',
                 price_per_gb_ram: 'Value per GB RAM',
-                price_per_tb_disk: 'Value per TB disk'
+                price_per_tb_disk: 'Value per TB disk',
+                price_effective_monthly: 'Price',
+                ram_gb: 'RAM',
+                disk_size: 'Disk size',
+                location: 'Location',
+                uplink_speed: 'Uplink speed',
+                cpu_model: 'CPU model'
             };
-            document.getElementById('current-sort').textContent = labels[sortBy] || sortBy;
+            const directionArrow = currentSortDirection === 'asc' ? '↑' : '↓';
+            document.getElementById('current-sort').textContent = `${labels[sortBy] || sortBy} ${directionArrow}`;
+        }
+
+        // Toggle the ▲/▼ indicator on the active sortable column header,
+        // clearing it from every other header.
+        function updateSortIndicators(activeSortBy, direction) {
+            document.querySelectorAll('.sort-indicator').forEach(el => {
+                if (el.dataset.indicator === activeSortBy) {
+                    el.textContent = direction === 'asc' ? '▲' : '▼';
+                    el.classList.add('active');
+                } else {
+                    el.textContent = '';
+                    el.classList.remove('active');
+                }
+            });
         }
 
         // Update staleness indicator
@@ -1641,10 +1686,12 @@
         // Best Deal Now button
         document.getElementById('best-deal-now').addEventListener('click', toggleBestDealMode);
 
-        // Sort axis selector
-        document.getElementById('sort-axis').addEventListener('change', (e) => {
-            userSortAxis = e.target.value;
-            // Exit best deal mode when user changes sort axis
+        // Shared by the sort-axis dropdown and clicking a sortable table
+        // column header -- both are just different ways to pick a new
+        // userSortAxis, so both go through the same reset logic (exit best
+        // deal mode, clear an active preset, refresh the description).
+        function applySortAxisChange(newAxis) {
+            userSortAxis = newAxis;
             if (bestDealMode) {
                 bestDealMode = false;
                 const button = document.getElementById('best-deal-now');
@@ -1656,7 +1703,6 @@
                 `;
                 description.textContent = 'Click to instantly show the single best-value server (highest benchmark value among scored listings)';
             }
-            // Clear preset selection when user manually chooses sort axis
             if (currentPreset) {
                 currentPreset = null;
                 document.querySelectorAll('.config-preset').forEach(el => {
@@ -1664,12 +1710,53 @@
                 });
             }
             updateSortDescription();
-            filterAndSortListings();
+        }
+
+        // Sort axis selector
+        document.getElementById('sort-axis').addEventListener('change', (e) => {
+            applySortAxisChange(e.target.value);
+            filterAndSortListings(undefined, 'asc');
             // Serialize to URL for bookmarking
             if (!isInitializingFromURL) {
                 serializeFiltersToURL();
             }
         });
+
+        // Sortable table column headers: first click on a new column sorts
+        // it ascending; clicking the already-active column again flips
+        // direction. This drives the exact same userSortAxis/
+        // currentSortDirection state as the dropdown above, so both stay
+        // in sync and either can be used interchangeably.
+        function sortByColumn(field) {
+            let direction;
+            if (userSortAxis === field) {
+                direction = currentSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                applySortAxisChange(field);
+                direction = 'asc';
+            }
+            const sortAxisSelect = document.getElementById('sort-axis');
+            if (sortAxisSelect.querySelector(`option[value="${field}"]`)) {
+                sortAxisSelect.value = field;
+            }
+            filterAndSortListings(undefined, direction);
+            if (!isInitializingFromURL) {
+                serializeFiltersToURL();
+            }
+        }
+
+        let sortableHeadersInitialized = false;
+        function initSortableHeaders() {
+            // init() re-runs on retryDataLoad() after a failed load; the
+            // headers are static markup that's never recreated, so without
+            // this guard each retry would stack another click listener on
+            // the same <th> elements.
+            if (sortableHeadersInitialized) return;
+            sortableHeadersInitialized = true;
+            document.querySelectorAll('.results-table th.sortable').forEach(th => {
+                th.addEventListener('click', () => sortByColumn(th.dataset.sort));
+            });
+        }
 
         // Update sort description based on current selection
         function updateSortDescription() {
@@ -2152,6 +2239,7 @@
 
         // Initialize
         async function init() {
+            initSortableHeaders();
             await loadCloudPricing();
             initStarterConfigs();
             updateSortDescription();
