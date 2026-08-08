@@ -309,6 +309,48 @@
             color: #6c757d;
         }
 
+        .expand-columns-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 10px;
+            padding: 8px 14px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            background: #fff;
+            color: #495057;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .expand-columns-btn:hover {
+            background: #f8f9fa;
+        }
+
+        .expand-columns-btn[aria-expanded="true"] {
+            background: #e7f0ff;
+            border-color: #4c6ef5;
+            color: #364fc7;
+        }
+
+        .expand-icon {
+            font-size: 0.9rem;
+        }
+
+        /* Single-thread columns are collapsed by default -- most listings
+           are judged on multi-thread value, and hiding these halves how
+           far the table needs to horizontally scroll on mobile. Toggled
+           via #toggle-single-thread-cols adding/removing .show-single on
+           the table (see initColumnToggle()). */
+        .results-table .col-single {
+            display: none;
+        }
+
+        .results-table.show-single .col-single {
+            display: table-cell;
+        }
+
         /* Results table -- overflow-x:auto on the wrapper (not body/html)
            keeps a wide table from ever causing page-level horizontal
            overflow, which previously broke position:fixed elements
@@ -737,8 +779,11 @@
                 Showing <span id="results-count">0</span> listings • Sorted by: <span id="current-sort">Value (multi-thread)</span>
             </div>
             <div id="listings-container">
+                <button type="button" id="toggle-single-thread-cols" class="expand-columns-btn" aria-expanded="false">
+                    <span class="expand-icon">⇔</span> Show single-thread columns
+                </button>
                 <div class="results-table-wrapper">
-                    <table class="results-table">
+                    <table class="results-table" id="results-table">
                         <thead>
                             <tr>
                                 <th class="sortable" data-sort="cpu_model">CPU <span class="sort-indicator" data-indicator="cpu_model"></span></th>
@@ -747,8 +792,10 @@
                                 <th class="sortable" data-sort="location">Location <span class="sort-indicator" data-indicator="location"></span></th>
                                 <th class="sortable numeric" data-sort="uplink_speed">Uplink <span class="sort-indicator" data-indicator="uplink_speed"></span></th>
                                 <th class="sortable numeric" data-sort="price_effective_monthly">Price/mo <span class="sort-indicator" data-indicator="price_effective_monthly"></span></th>
+                                <th class="sortable numeric" data-sort="benchmark_multi">Benchmark (M) <span class="sort-indicator" data-indicator="benchmark_multi"></span></th>
+                                <th class="sortable numeric col-single" data-sort="benchmark_single">Benchmark (S) <span class="sort-indicator" data-indicator="benchmark_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_benchmark_point_multi">€/Bench (M) <span class="sort-indicator" data-indicator="price_per_benchmark_point_multi"></span></th>
-                                <th class="sortable numeric" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
+                                <th class="sortable numeric col-single" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_tb_disk">€/TB Disk <span class="sort-indicator" data-indicator="price_per_tb_disk"></span></th>
                                 <th></th>
@@ -1423,6 +1470,16 @@
                         else if (b.price_per_benchmark_point_single === null) comparison = 1;
                         else comparison = a.price_per_benchmark_point_single - b.price_per_benchmark_point_single;
                         break;
+                    case 'benchmark_multi':
+                        if (a.benchmark_multi === null) comparison = -1;
+                        else if (b.benchmark_multi === null) comparison = 1;
+                        else comparison = a.benchmark_multi - b.benchmark_multi;
+                        break;
+                    case 'benchmark_single':
+                        if (a.benchmark_single === null) comparison = -1;
+                        else if (b.benchmark_single === null) comparison = 1;
+                        else comparison = a.benchmark_single - b.benchmark_single;
+                        break;
                     case 'price_per_gb_ram':
                         comparison = a.price_per_gb_ram - b.price_per_gb_ram;
                         break;
@@ -1502,6 +1559,8 @@
 
                 const benchmarkMultiClass = listing.price_per_benchmark_point_multi !== null ? 'metric-good' : 'metric-unscored';
                 const benchmarkSingleClass = listing.price_per_benchmark_point_single !== null ? 'metric-good' : 'metric-unscored';
+                const scoreMultiClass = listing.benchmark_multi !== null ? 'metric-good' : 'metric-unscored';
+                const scoreSingleClass = listing.benchmark_single !== null ? 'metric-good' : 'metric-unscored';
 
                 return `
                     <tr>
@@ -1514,8 +1573,10 @@
                         <td>${getLocationLabel(listing.location)}</td>
                         <td class="numeric">${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'}</td>
                         <td class="numeric price-cell">€${listing.price_effective_monthly.toFixed(2)}</td>
+                        <td class="numeric ${scoreMultiClass}">${listing.benchmark_multi !== null ? listing.benchmark_multi.toLocaleString() : 'N/A'}</td>
+                        <td class="numeric col-single ${scoreSingleClass}">${listing.benchmark_single !== null ? listing.benchmark_single.toLocaleString() : 'N/A'}</td>
                         <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
-                        <td class="numeric ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
+                        <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
                         <td><a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer">View &rarr;</a></td>
@@ -1552,7 +1613,9 @@
                 disk_size: 'Disk size',
                 location: 'Location',
                 uplink_speed: 'Uplink speed',
-                cpu_model: 'CPU model'
+                cpu_model: 'CPU model',
+                benchmark_multi: 'Benchmark score (multi-thread)',
+                benchmark_single: 'Benchmark score (single-thread)'
             };
             const directionArrow = currentSortDirection === 'asc' ? '↑' : '↓';
             document.getElementById('current-sort').textContent = `${labels[sortBy] || sortBy} ${directionArrow}`;
@@ -1755,6 +1818,21 @@
             sortableHeadersInitialized = true;
             document.querySelectorAll('.results-table th.sortable').forEach(th => {
                 th.addEventListener('click', () => sortByColumn(th.dataset.sort));
+            });
+        }
+
+        let columnToggleInitialized = false;
+        function initColumnToggle() {
+            if (columnToggleInitialized) return;
+            columnToggleInitialized = true;
+            const button = document.getElementById('toggle-single-thread-cols');
+            const table = document.getElementById('results-table');
+            button.addEventListener('click', () => {
+                const expanded = table.classList.toggle('show-single');
+                button.setAttribute('aria-expanded', String(expanded));
+                button.innerHTML = expanded
+                    ? '<span class="expand-icon">⇔</span> Hide single-thread columns'
+                    : '<span class="expand-icon">⇔</span> Show single-thread columns';
             });
         }
 
@@ -2240,6 +2318,7 @@
         // Initialize
         async function init() {
             initSortableHeaders();
+            initColumnToggle();
             await loadCloudPricing();
             initStarterConfigs();
             updateSortDescription();
