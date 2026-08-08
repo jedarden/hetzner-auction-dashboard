@@ -388,6 +388,25 @@
             font-style: italic;
         }
 
+        .listing-footer {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e9ecef;
+            text-align: right;
+        }
+
+        .hetzner-link {
+            display: inline-block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #d50c2d;
+            text-decoration: none;
+        }
+
+        .hetzner-link:hover {
+            text-decoration: underline;
+        }
+
         .unscored-badge {
             display: inline-block;
             background: #f1f3ff;
@@ -1592,6 +1611,9 @@
                             <div class="metric-value">€${listing.price_per_tb_disk.toFixed(2)}</div>
                         </div>
                     </div>
+                    <div class="listing-footer">
+                        <a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer">View on Hetzner Server Auction &rarr;</a>
+                    </div>
                 `;
 
                 container.appendChild(listingElement);
@@ -2381,7 +2403,7 @@
             // Try to load real data with graceful fallback
             // Set USE_REAL_DATA = true to attempt loading from DuckDB-WASM + Parquet
             // Set USE_REAL_DATA = false to use mock data (for testing/demo)
-            const USE_REAL_DATA = false; // Change to true when real Parquet data is available
+            const USE_REAL_DATA = true; // Enabled after verifying /current_snapshot.parquet is deployed (2026-08-06)
 
             if (USE_REAL_DATA) {
                 try {
@@ -2427,7 +2449,7 @@
 
             try {
                 // Step 1: Fetch - Load auction data (with fallback to mock data)
-                const USE_REAL_DATA = false; // Change to true when real Parquet data is available
+                const USE_REAL_DATA = true; // Enabled after verifying /current_snapshot.parquet is deployed (2026-08-06)
                 if (USE_REAL_DATA) {
                     try {
                         await loadRealDataWithFallback();
@@ -2615,6 +2637,21 @@
             reset: resetSnapshotDiff,
             manager: snapshotDiffManager
         };
+    </script>
+
+    <!-- Agentation: UI feedback toolbar, isolated from the dashboard's own
+         plain HTML/JS (no bundler here, so React is loaded as ESM from a
+         CDN just for this). Removing this block has zero effect on the
+         dashboard above. See web/agentation-test.html for the pattern this
+         was proven against. -->
+    <div id="agentation-root"></div>
+    <script type="module">
+        import React from 'https://esm.sh/react@18.3.1';
+        import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client';
+        import { Agentation } from 'https://esm.sh/agentation@3.0.2';
+
+        const root = createRoot(document.getElementById('agentation-root'));
+        root.render(React.createElement(Agentation));
     </script>
 </body>
 </html>
