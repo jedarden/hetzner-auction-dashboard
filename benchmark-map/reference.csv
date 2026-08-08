@@ -86,3 +86,4 @@ passmark_id,cpu_model,single_thread_score,multi_thread_score
 3596,Intel Xeon E-2276G,2884,14068
 3156,Intel Xeon W-2145,2581,17997
 5754,Intel Xeon Gold 5412U,2837,50314
+3701,Intel Xeon W-2295,2529,29625
