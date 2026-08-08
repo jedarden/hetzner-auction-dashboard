@@ -41,9 +41,9 @@ class TestCpuMatchingFixtures:
             "Intel Xeon E5-2680v4",  # No space, full prefix
         ]
 
-        expected_passmark_id = 5773  # From reference.csv
-        expected_single = 2012
-        expected_multi = 21339
+        expected_passmark_id = 2779  # From reference.csv
+        expected_single = 1930
+        expected_multi = 17177
 
         for variant in variants:
             result = cpu_matcher.match_cpu(variant)
@@ -67,7 +67,7 @@ class TestCpuMatchingFixtures:
             "E5-2660v4",
         ]
 
-        expected_passmark_id = 5771
+        expected_passmark_id = 2881
 
         for variant in variants:
             result = cpu_matcher.match_cpu(variant)
@@ -82,7 +82,7 @@ class TestCpuMatchingFixtures:
             "EPYC 7401P",
         ]
 
-        expected_passmark_id = 5055
+        expected_passmark_id = 3118
 
         for variant in variants:
             result = cpu_matcher.match_cpu(variant)
@@ -97,7 +97,7 @@ class TestCpuMatchingFixtures:
             "Ryzen 9 7950X",
         ]
 
-        expected_passmark_id = 6455
+        expected_passmark_id = 5031
 
         for variant in variants:
             result = cpu_matcher.match_cpu(variant)
@@ -113,7 +113,7 @@ class TestCpuMatchingFixtures:
             "i9-12900K",
         ]
 
-        expected_passmark_id = 5200
+        expected_passmark_id = 4597
 
         for variant in variants:
             result = cpu_matcher.match_cpu(variant)
@@ -166,8 +166,8 @@ class TestCpuMatchingFixtures:
         v4_variants = ["Intel Xeon E5-2680 v4", "E5-2680 v4", "E5-2680v4"]
         v3_variants = ["Intel Xeon E5-2680 v3", "E5-2680 v3", "E5-2680v3"]
 
-        v4_passmark_id = 5773
-        v3_passmark_id = 4756
+        v4_passmark_id = 2779
+        v3_passmark_id = 2390
 
         # Test v4 variants match v4, never v3
         for v4_variant in v4_variants:
@@ -192,8 +192,8 @@ class TestCpuMatchingFixtures:
         v4_variants = ["Intel Xeon E5-2660 v4", "E5-2660 v4", "E5-2660v4"]
         v3_variants = ["Intel Xeon E5-2660 v3", "E5-2660 v3", "E5-2660v3"]
 
-        v4_passmark_id = 5771
-        v3_passmark_id = 4754
+        v4_passmark_id = 2881
+        v3_passmark_id = 2359
 
         for v4_variant in v4_variants:
             result = cpu_matcher.match_cpu(v4_variant)
@@ -216,8 +216,8 @@ class TestCpuMatchingFixtures:
         epyc_7402_variants = ["AMD EPYC 7402", "EPYC 7402"]
         epyc_7452_variants = ["AMD EPYC 7452", "EPYC 7452"]
 
-        epyc_7402_passmark_id = 5952
-        epyc_7452_passmark_id = 5954
+        epyc_7402_passmark_id = 3713
+        epyc_7452_passmark_id = 3600
 
         for variant in epyc_7402_variants:
             result = cpu_matcher.match_cpu(variant)
@@ -240,8 +240,8 @@ class TestCpuMatchingFixtures:
         ryzen_7950x_variants = ["AMD Ryzen 9 7950X", "Ryzen 9 7950X"]
         ryzen_7900x_variants = ["AMD Ryzen 9 7900X", "Ryzen 9 7900X"]
 
-        ryzen_7950x_passmark_id = 6455
-        ryzen_7900x_passmark_id = 6453
+        ryzen_7950x_passmark_id = 5031
+        ryzen_7900x_passmark_id = 5027
 
         for variant in ryzen_7950x_variants:
             result = cpu_matcher.match_cpu(variant)
