@@ -396,13 +396,22 @@
         .results-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             white-space: nowrap;
         }
 
+        /* Kept tight deliberately: with every optional column expanded
+           (cores/threads + single-thread columns) this table has 14 data
+           columns plus the link column. At 12px/16px padding it overflowed
+           the .results page card by ~490px at a common 1440px viewport --
+           padding is the single biggest lever (32px/cell * 15 cells =
+           480px), so it's cut hard here rather than resorting to hiding
+           data. See also the Cores/Threads column merge and shortened
+           "Bench"/link-arrow labels below, part of the same fit-to-width
+           pass. */
         .results-table th,
         .results-table td {
-            padding: 12px 16px;
+            padding: 8px;
             text-align: left;
             border-bottom: 1px solid #e9ecef;
         }
@@ -417,18 +426,16 @@
 
         .results-table th {
             background: #f8f9fa;
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: #6c757d;
             text-transform: uppercase;
             font-weight: 600;
-            /* Float the header row while scrolling the (page-level-scrolling)
-               results table. Needs an opaque background (already set above)
-               so rows don't show through underneath, and a z-index above
-               row content -- .results-table-wrapper's overflow-x:auto does
-               NOT break this, since the wrapper has no height constraint of
-               its own (grows to fit content), so it never becomes an
-               independent vertical scrollport; sticky still resolves
-               against the real page scroll. */
+            /* Float the header row while scrolling the results table --
+               relies on .results-table-wrapper's max-height/overflow-y
+               making it a real, independent scrollport (see that rule's
+               comment); needs an opaque background (already set above) so
+               rows don't show through underneath, plus a z-index above row
+               content. */
             position: sticky;
             top: 0;
             z-index: 2;
@@ -463,12 +470,12 @@
 
         .results-table .cpu-cell {
             white-space: normal;
-            min-width: 200px;
+            min-width: 148px;
         }
 
         .results-table .disk-cell {
             white-space: normal;
-            min-width: 160px;
+            min-width: 114px;
         }
 
         .results-table .cpu-name {
@@ -835,14 +842,13 @@
                                     <button type="button" id="toggle-cores-threads-cols" class="expand-icon-btn" aria-expanded="false" title="Show cores/threads columns">⇔</button>
                                     <span class="sort-indicator" data-indicator="cpu_model"></span>
                                 </th>
-                                <th class="sortable numeric col-cores" data-sort="cpu_cores">Cores <span class="sort-indicator" data-indicator="cpu_cores"></span></th>
-                                <th class="sortable numeric col-cores" data-sort="cpu_threads">Threads <span class="sort-indicator" data-indicator="cpu_threads"></span></th>
+                                <th class="sortable numeric col-cores" data-sort="cpu_cores" title="Cores / Threads">Cores/Thr <span class="sort-indicator" data-indicator="cpu_cores"></span></th>
                                 <th class="sortable numeric" data-sort="benchmark_multi">
-                                    Benchmark (M)
+                                    Bench (M)
                                     <button type="button" id="toggle-single-thread-cols" class="expand-icon-btn" aria-expanded="false" title="Show single-thread columns">⇔</button>
                                     <span class="sort-indicator" data-indicator="benchmark_multi"></span>
                                 </th>
-                                <th class="sortable numeric col-single" data-sort="benchmark_single">Benchmark (S) <span class="sort-indicator" data-indicator="benchmark_single"></span></th>
+                                <th class="sortable numeric col-single" data-sort="benchmark_single">Bench (S) <span class="sort-indicator" data-indicator="benchmark_single"></span></th>
                                 <th class="sortable numeric" data-sort="ram_gb">RAM <span class="sort-indicator" data-indicator="ram_gb"></span></th>
                                 <th class="sortable" data-sort="disk_size">Disk <span class="sort-indicator" data-indicator="disk_size"></span></th>
                                 <th class="sortable" data-sort="location">Location <span class="sort-indicator" data-indicator="location"></span></th>
@@ -1564,11 +1570,6 @@
                         else if (b.cpu_cores === null) comparison = 1;
                         else comparison = a.cpu_cores - b.cpu_cores;
                         break;
-                    case 'cpu_threads':
-                        if (a.cpu_threads === null) comparison = -1;
-                        else if (b.cpu_threads === null) comparison = 1;
-                        else comparison = a.cpu_threads - b.cpu_threads;
-                        break;
                     case 'uplink_speed':
                         comparison = (a.uplink_speed || 0) - (b.uplink_speed || 0);
                         break;
@@ -1642,20 +1643,19 @@
                             <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}</div>
                             ${cloudSub}
                         </td>
-                        <td class="numeric col-cores">${listing.cpu_cores ?? 'N/A'}</td>
-                        <td class="numeric col-cores">${listing.cpu_threads ?? 'N/A'}</td>
+                        <td class="numeric col-cores">${listing.cpu_cores ?? 'N/A'}/${listing.cpu_threads ?? 'N/A'}</td>
                         <td class="numeric ${scoreMultiClass}">${listing.benchmark_multi !== null ? listing.benchmark_multi.toLocaleString() : 'N/A'}</td>
                         <td class="numeric col-single ${scoreSingleClass}">${listing.benchmark_single !== null ? listing.benchmark_single.toLocaleString() : 'N/A'}</td>
                         <td class="numeric">${listing.ram_gb}GB${listing.ecc_memory ? ' (ECC)' : ''}</td>
                         <td class="disk-cell">${formatDiskConfig(listing)}</td>
                         <td>${getLocationLabel(listing.location)}</td>
-                        <td class="numeric">${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'}</td>
+                        <td class="numeric" title="${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : ''}">${listing.uplink_speed ? listing.uplink_speed + 'M' : 'N/A'}</td>
                         <td class="numeric price-cell">€${listing.price_effective_monthly.toFixed(2)}</td>
                         <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
-                        <td><a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer">View &rarr;</a></td>
+                        <td><a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a></td>
                     </tr>
                 `;
             }).join('');
@@ -1692,8 +1692,7 @@
                 cpu_model: 'CPU model',
                 benchmark_multi: 'Benchmark score (multi-thread)',
                 benchmark_single: 'Benchmark score (single-thread)',
-                cpu_cores: 'CPU cores',
-                cpu_threads: 'CPU threads'
+                cpu_cores: 'CPU cores'
             };
             const directionArrow = currentSortDirection === 'asc' ? '↑' : '↓';
             document.getElementById('current-sort').textContent = `${labels[sortBy] || sortBy} ${directionArrow}`;
