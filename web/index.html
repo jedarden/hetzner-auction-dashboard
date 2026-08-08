@@ -2008,29 +2008,24 @@
 
                 console.log('DuckDB initialized successfully');
 
-                // Step 3: Load httpfs extension for remote Parquet access.
-                // INSTALL needs a virtual home directory to cache the
-                // extension into -- there's no real filesystem in a browser
-                // WASM sandbox, so this must be set explicitly or INSTALL
-                // throws "Can't find the home directory at '/home/web_user'"
-                // (confirmed against duckdb/duckdb-wasm#1425). The path is
-                // just a key into DuckDB-WASM's virtual FS, not a real one.
-                console.log('Loading httpfs extension...');
-                await db.query("SET home_directory='/tmp'");
-                await db.query("INSTALL httpfs");
-                await db.query("LOAD httpfs");
-                console.log('httpfs extension loaded');
-
-                // Step 4: Load Parquet data
+                // Step 3: Load Parquet data. DuckDB-WASM does NOT support the
+                // httpfs extension at all (per duckdb.org/docs/current/clients/wasm/extensions.html:
+                // "The HTTPFS extension is, at the moment, not available in
+                // DuckDB-Wasm") -- it has its own built-in HTTP filesystem, no
+                // INSTALL/LOAD needed. The earlier `INSTALL httpfs` calls threw
+                // "Can't find the home directory at '/home/web_user'" and a
+                // follow-up `SET home_directory=...` didn't fix it either,
+                // because the real issue was that INSTALL shouldn't be called
+                // at all in this environment.
                 console.log('Loading Parquet data...');
-                // Same-origin per ADR-7 (2026-08-06) — the pipeline bundles
-                // current_snapshot.parquet into the same Cloudflare Pages
-                // deployment as this page, no R2/cross-origin URL needed.
-                const parquetUrl = '/current_snapshot.parquet';
+                // Absolute URL: this runs inside a Worker created from a
+                // blob: URL, so a bare relative path would resolve against
+                // the worker's own base URL, not this page's origin.
+                const parquetUrl = `${location.origin}/current_snapshot.parquet`;
 
                 await db.query(`
                     CREATE TABLE listings AS
-                    SELECT * FROM read_parquet('${parquetUrl}')
+                    SELECT * FROM '${parquetUrl}'
                 `);
 
                 console.log('Parquet data loaded successfully');
