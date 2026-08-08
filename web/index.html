@@ -2008,8 +2008,15 @@
 
                 console.log('DuckDB initialized successfully');
 
-                // Step 3: Load httpfs extension for remote Parquet access
+                // Step 3: Load httpfs extension for remote Parquet access.
+                // INSTALL needs a virtual home directory to cache the
+                // extension into -- there's no real filesystem in a browser
+                // WASM sandbox, so this must be set explicitly or INSTALL
+                // throws "Can't find the home directory at '/home/web_user'"
+                // (confirmed against duckdb/duckdb-wasm#1425). The path is
+                // just a key into DuckDB-WASM's virtual FS, not a real one.
                 console.log('Loading httpfs extension...');
+                await db.query("SET home_directory='/tmp'");
                 await db.query("INSTALL httpfs");
                 await db.query("LOAD httpfs");
                 console.log('httpfs extension loaded');
