@@ -372,9 +372,22 @@
            keeps a wide table from ever causing page-level horizontal
            overflow, which previously broke position:fixed elements
            elsewhere on the page (see .sort-selector select's min-width
-           fix). Never remove that containment without re-checking that. */
+           fix). Never remove that containment without re-checking that.
+
+           max-height + overflow-y:auto turns this wrapper into a real,
+           independent vertical scrollport (confirmed via CDP: without a
+           height cap, overflow-x:auto still computes overflow-y as auto
+           per the CSS overflow-x/y coupling rule, but with scrollHeight
+           == clientHeight there's nothing to actually scroll, so a plain
+           `position: sticky` th just scrolls away with the page instead
+           of floating). Bounding the height makes the wrapper the thing
+           that scrolls, so the sticky header floats immediately instead
+           of only pinning once the page has scrolled the whole table to
+           the top of the viewport. */
         .results-table-wrapper {
             overflow-x: auto;
+            overflow-y: auto;
+            max-height: 70vh;
             border: 1px solid #e9ecef;
             border-radius: 8px;
             -webkit-overflow-scrolling: touch;
