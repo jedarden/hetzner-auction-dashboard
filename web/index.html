@@ -240,6 +240,13 @@
 
         .sort-selector select {
             flex: 1;
+            min-width: 0; /* flex items don't shrink below intrinsic content
+                             size by default; a <select>'s widest <option>
+                             text (e.g. "Benchmark Value (multi-thread)")
+                             forced this ~44px past the viewport edge on
+                             narrow screens, causing page-wide horizontal
+                             overflow and pushing anything position:fixed
+                             (e.g. the Agentation toolbar) off-screen too */
             padding: 10px;
             border: 1px solid #ced4da;
             border-radius: 4px;
