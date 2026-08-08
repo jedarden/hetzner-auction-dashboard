@@ -441,6 +441,11 @@
             min-width: 200px;
         }
 
+        .results-table .disk-cell {
+            white-space: normal;
+            min-width: 160px;
+        }
+
         .results-table .cpu-name {
             font-weight: 600;
             color: #1a1a1a;
@@ -814,7 +819,7 @@
                                 </th>
                                 <th class="sortable numeric col-single" data-sort="benchmark_single">Benchmark (S) <span class="sort-indicator" data-indicator="benchmark_single"></span></th>
                                 <th class="sortable numeric" data-sort="ram_gb">RAM <span class="sort-indicator" data-indicator="ram_gb"></span></th>
-                                <th class="sortable numeric" data-sort="disk_size">Disk <span class="sort-indicator" data-indicator="disk_size"></span></th>
+                                <th class="sortable" data-sort="disk_size">Disk <span class="sort-indicator" data-indicator="disk_size"></span></th>
                                 <th class="sortable" data-sort="location">Location <span class="sort-indicator" data-indicator="location"></span></th>
                                 <th class="sortable numeric" data-sort="uplink_speed">Uplink <span class="sort-indicator" data-indicator="uplink_speed"></span></th>
                                 <th class="sortable numeric" data-sort="price_effective_monthly">Price/mo <span class="sort-indicator" data-indicator="price_effective_monthly"></span></th>
@@ -1405,6 +1410,22 @@
             return listing.disks.reduce((sum, disk) => sum + disk.size_tb, 0);
         }
 
+        // Per-drive configuration string, e.g. "2x 512GB NVMe + 2x 4TB HDD" --
+        // shows what's actually in the box, not just the summed total, since
+        // two very different configs (2x1TB vs 4x512GB) can share a total.
+        function formatDiskConfig(listing) {
+            if (!listing.disks || listing.disks.length === 0) return 'N/A';
+            const typeLabels = { nvme: 'NVMe', ssd: 'SATA SSD', hdd: 'HDD' };
+            return listing.disks.map(d => {
+                const label = typeLabels[d.type] || d.type.toUpperCase();
+                const capacityGb = d.capacity_gb || 0;
+                const capacity = capacityGb >= 1000
+                    ? `${(capacityGb % 1000 === 0 ? capacityGb / 1000 : (capacityGb / 1000).toFixed(1))}TB`
+                    : `${capacityGb}GB`;
+                return `${d.count}x ${capacity} ${label}`;
+            }).join(' + ');
+        }
+
         function filterAndSortListings(presetSortBy = 'price_per_benchmark_point_multi', explicitDirection = null) {
             // Determine effective sort method based on user selection
             let sortBy = presetSortBy;
@@ -1568,12 +1589,6 @@
             noResultsEl.style.display = 'none';
 
             tbody.innerHTML = listings.map(listing => {
-                const totalDiskSize = getTotalDiskSize(listing);
-                const diskTypes = listing.disks.map(d => {
-                    const typeLabels = { nvme: 'NVMe', ssd: 'SATA SSD', hdd: 'HDD' };
-                    return typeLabels[d.type] || d.type.toUpperCase();
-                }).join(', ');
-
                 // Find equivalent Cloud instance and calculate savings
                 const cloudEquivalent = findEquivalentCloudInstance(listing.ram_gb, listing.cpu_cores || 0);
                 const cloudSavings = cloudEquivalent
@@ -1607,7 +1622,7 @@
                         <td class="numeric ${scoreMultiClass}">${listing.benchmark_multi !== null ? listing.benchmark_multi.toLocaleString() : 'N/A'}</td>
                         <td class="numeric col-single ${scoreSingleClass}">${listing.benchmark_single !== null ? listing.benchmark_single.toLocaleString() : 'N/A'}</td>
                         <td class="numeric">${listing.ram_gb}GB${listing.ecc_memory ? ' (ECC)' : ''}</td>
-                        <td class="numeric">${totalDiskSize}TB ${diskTypes}</td>
+                        <td class="disk-cell">${formatDiskConfig(listing)}</td>
                         <td>${getLocationLabel(listing.location)}</td>
                         <td class="numeric">${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : 'N/A'}</td>
                         <td class="numeric price-cell">€${listing.price_effective_monthly.toFixed(2)}</td>
@@ -2358,8 +2373,10 @@
 
         // row.disks is a DuckDB LIST<STRUCT<type, count, capacity_gb>> --
         // one entry per (type, per-drive capacity) group, count drives each.
-        // The dashboard's own shape is one entry per group with a total
-        // size_tb (count * capacity_gb), and a lowercase type matching the
+        // The dashboard's own shape keeps count/capacity_gb per group (so the
+        // UI can show the real configuration, e.g. "2x 512GB NVMe", not just
+        // a total) alongside a derived size_tb (count * capacity_gb) for the
+        // total/filter/sort paths, and a lowercase type matching the
         // disk-type filter's option values (nvme/ssd/hdd); the feed's type
         // strings are uppercase (e.g. "SSD").
         function parseDisksFromRow(row) {
@@ -2368,6 +2385,8 @@
             }
             return row.disks.map(d => ({
                 type: (d.type || 'unknown').toLowerCase(),
+                count: d.count || 1,
+                capacity_gb: d.capacity_gb || 0,
                 size_tb: (d.count || 1) * (d.capacity_gb || 0) / 1000
             }));
         }
