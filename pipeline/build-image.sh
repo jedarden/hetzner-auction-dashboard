@@ -10,7 +10,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 IMAGE_NAME="${IMAGE_NAME:-registry.ardenone.com/hetzner-auction-pipeline}"
-VERSION="${1:-0.1.0}"
+VERSION="${1:-0.1.10}"
 FULL_TAG="${IMAGE_NAME}:${VERSION}"
 
 echo "🐳 Building Hetzner Auction Dashboard Pipeline image"
