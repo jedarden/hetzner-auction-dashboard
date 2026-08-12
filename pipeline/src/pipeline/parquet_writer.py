@@ -106,6 +106,7 @@ class ParquetWriter:
             "uplink_speed": [listing.uplink_speed for listing in listings],
             # Pricing (EUR cents)
             "price_base": [listing.price_base for listing in listings],
+            "price_ipv4_monthly": [listing.price_ipv4_monthly for listing in listings],
             "price_setup_fee": [listing.price_setup_fee for listing in listings],
             "price_effective_monthly": [listing.price_effective_monthly for listing in listings],
             # Derived cost metrics (EUR cents per unit)
@@ -169,6 +170,7 @@ class ParquetWriter:
             pa.field("uplink_speed", pa.int32()),  # Mbit/s
             # Pricing (EUR cents)
             pa.field("price_base", pa.int32()),
+            pa.field("price_ipv4_monthly", pa.int32()),
             pa.field("price_setup_fee", pa.int32()),
             pa.field("price_effective_monthly", pa.int32()),
             # Derived cost metrics (EUR cents per unit, nullable for division-by-zero)

@@ -853,7 +853,7 @@
                                 <th class="sortable" data-sort="disk_size">Disk <span class="sort-indicator" data-indicator="disk_size"></span></th>
                                 <th class="sortable" data-sort="location">Location <span class="sort-indicator" data-indicator="location"></span></th>
                                 <th class="sortable numeric" data-sort="uplink_speed">Uplink <span class="sort-indicator" data-indicator="uplink_speed"></span></th>
-                                <th class="sortable numeric" data-sort="price_effective_monthly">Price/mo <span class="sort-indicator" data-indicator="price_effective_monthly"></span></th>
+                                <th class="sortable numeric" data-sort="price_effective_monthly" title="Recurring server + primary IPv4 price, excluding VAT">Price/mo* <span class="sort-indicator" data-indicator="price_effective_monthly"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_benchmark_point_multi">€/Bench (M) <span class="sort-indicator" data-indicator="price_per_benchmark_point_multi"></span></th>
                                 <th class="sortable numeric col-single" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
@@ -866,6 +866,7 @@
                         </tbody>
                     </table>
                 </div>
+                <div class="cpu-sub" style="margin-top: 8px;">* Recurring server price plus the required primary IPv4 address; excludes VAT. Any one-time setup fee is shown separately.</div>
                 <div id="no-results-message" style="display: none; text-align: center; padding: 40px; color: #6c757d;">No listings match your filters. Try adjusting your criteria.</div>
             </div>
         </div>
@@ -1650,7 +1651,7 @@
                         <td class="disk-cell">${formatDiskConfig(listing)}</td>
                         <td>${getLocationLabel(listing.location)}</td>
                         <td class="numeric" title="${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : ''}">${listing.uplink_speed ? listing.uplink_speed + 'M' : 'N/A'}</td>
-                        <td class="numeric price-cell">€${listing.price_effective_monthly.toFixed(2)}</td>
+                        <td class="numeric price-cell" title="Server €${listing.price_base.toFixed(2)} + primary IPv4 €${listing.price_ipv4_monthly.toFixed(2)}; excludes VAT">€${listing.price_effective_monthly.toFixed(2)}${listing.price_setup_fee > 0 ? `<div class="cpu-sub">€${listing.price_first_month.toFixed(2)} first month incl. setup</div>` : ''}</td>
                         <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
@@ -2379,7 +2380,13 @@
                 cpu_threads: row.cpu_threads ?? null,
                 ram_gb: row.ram_gb || 0,
                 disks: parseDisksFromRow(row),
-                price_effective_monthly: (row.price_effective_monthly || 0) / 100,
+                price_base: (row.price_base || 0) / 100,
+                price_ipv4_monthly: (row.price_ipv4_monthly || 0) / 100,
+                price_setup_fee: (row.price_setup_fee || 0) / 100,
+                // The table's monthly price is recurring server + mandatory IPv4.
+                // Keep the pipeline's conservative setup-inclusive value separate.
+                price_effective_monthly: ((row.price_base || 0) + (row.price_ipv4_monthly || 0)) / 100,
+                price_first_month: (row.price_effective_monthly || 0) / 100,
                 benchmark_multi: row.multi_thread_score ?? null,
                 benchmark_single: row.single_thread_score ?? null,
                 benchmark_matched: row.benchmark_matched || false,

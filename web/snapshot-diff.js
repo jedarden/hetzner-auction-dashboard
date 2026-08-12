@@ -12,6 +12,7 @@
 const DB_NAME = 'hetzner-auction-dashboard';
 const DB_VERSION = 1;
 const STORE_NAME = 'auction-snapshots';
+const DISMISSED_DIFF_KEY = 'hetzner-auction-dismissed-diff';
 
 /**
  * Generate a unique configuration signature for a listing
@@ -375,6 +376,16 @@ const snapshotDiffManager = {
             return;
         }
 
+        const hasChanges = this.currentDiff.new.length > 0
+            || this.currentDiff.removed.length > 0
+            || this.currentDiff.priceChanges.length > 0
+            || this.currentDiff.specChanges.length > 0;
+        const dismissedComparison = localStorage.getItem(DISMISSED_DIFF_KEY);
+        if (!hasChanges || dismissedComparison === String(this.currentDiff.previousTimestamp)) {
+            this.hideDiffSummary();
+            return;
+        }
+
         const summary = this.buildDiffSummary();
         this.showDiffSummary(summary);
     },
@@ -433,9 +444,19 @@ const snapshotDiffManager = {
         }
 
         summaryElement.innerHTML = `
-            <strong>Since you last looked:</strong> ${summary}
-            <button class="diff-details-btn" onclick="snapshotDiffManager.showDiffDetails()">View details</button>
+            <span><strong>Since you last looked:</strong> ${summary}</span>
+            <span class="diff-summary-actions">
+                <button class="diff-details-btn" onclick="snapshotDiffManager.showDiffDetails()">View details</button>
+                <button class="diff-dismiss-btn" onclick="snapshotDiffManager.dismissDiffSummary()" aria-label="Dismiss changes summary" title="Hide until a newer comparison is available">×</button>
+            </span>
         `;
+    },
+
+    dismissDiffSummary() {
+        if (this.currentDiff?.previousTimestamp) {
+            localStorage.setItem(DISMISSED_DIFF_KEY, String(this.currentDiff.previousTimestamp));
+        }
+        this.hideDiffSummary();
     },
 
     /**
