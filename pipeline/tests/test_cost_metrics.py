@@ -120,6 +120,15 @@ class TestCostMetricsEnricher:
         assert enriched.price_effective_monthly == 7498
         assert enriched.price_effective_monthly == enriched.price_base + enriched.price_setup_fee
 
+    def test_price_effective_monthly_includes_primary_ipv4(self, enricher, sample_listing_with_zero_setup, matched_cpu_match):
+        """The mandatory primary IPv4 charge is part of the buyer's monthly cost."""
+        sample_listing_with_zero_setup.price_ipv4_monthly = 170
+
+        enriched = enricher.enrich_listing(sample_listing_with_zero_setup, matched_cpu_match)
+
+        assert enriched.price_effective_monthly == 2169
+        assert enriched.price_ipv4_monthly == 170
+
     def test_price_per_benchmark_point_single_matched(self, enricher, sample_listing_with_zero_setup, matched_cpu_match):
         """Test price_per_benchmark_point_single for matched CPU."""
         enriched = enricher.enrich_listing(sample_listing_with_zero_setup, matched_cpu_match)

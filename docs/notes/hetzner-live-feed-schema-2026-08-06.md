@@ -80,6 +80,7 @@ live pull: `Id`, `Hardware`, `Prices`, `IPPrices`, `Details`, `Timer`.
 | `available_from` | **not present in this feed** | See "Removed: `available_from`" below. |
 | `uplink_speed` | `Details.Bandwidth` | Integer Mbit/s, e.g. `1000`. |
 | `price_base` | `round(Prices.monthly.EUR * 100)` | `Prices.monthly.EUR` is a plain float/int in whole EUR (e.g. `72`, or `60.7` per `filter.price.lowest.EUR` in the envelope) — **never** a `"€NN.NN"` string. Convert to cents by `× 100` and round. |
+| `price_ipv4_monthly` | `round(IPPrices.monthly.EUR * 100)` | Required primary IPv4 charge published separately from the server base price. Include it in recurring and derived cost calculations. |
 | `price_setup_fee` | `round(Prices.setup.EUR * 100)` | Same conversion; `0` when no setup fee. |
 | `fetched_at` | pipeline-generated at fetch time | Unchanged. |
 

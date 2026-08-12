@@ -7,7 +7,7 @@ This is the enrichment phase that combines raw listing data with CPU benchmark
 match results to compute per-unit pricing metrics.
 
 Derived metrics computed:
-- price_effective_monthly: Base price + setup fee (full-value, non-amortized)
+- price_effective_monthly: Base price + primary IPv4 + setup fee (full-value, non-amortized)
 - price_per_benchmark_point_single: Price / single-thread score (NULL if unmatched)
 - price_per_benchmark_point_multi: Price / multi-thread score (NULL if unmatched)
 - price_per_gb_ram: Price per GB of RAM
@@ -67,6 +67,7 @@ class EnrichedListing:
     price_per_benchmark_point_multi: Optional[float]  # EUR cents per multi-thread point
     price_per_gb_ram: Optional[float]  # EUR cents per GB RAM
     price_per_tb_disk: Optional[float]  # EUR cents per TB disk capacity
+    price_ipv4_monthly: int = 0  # EUR cents for the primary IPv4 address
 
 
 class CostMetricsEnricher:
@@ -92,7 +93,7 @@ class CostMetricsEnricher:
         """
         # Compute derived cost metrics
         price_effective_monthly = self._compute_price_effective_monthly(
-            listing.price_base, listing.price_setup_fee
+            listing.price_base, listing.price_ipv4_monthly, listing.price_setup_fee
         )
 
         price_per_benchmark_point_single = self._compute_price_per_benchmark_point_single(
@@ -132,6 +133,7 @@ class CostMetricsEnricher:
             disks=listing.disks,
             uplink_speed=listing.uplink_speed,
             price_base=listing.price_base,
+            price_ipv4_monthly=listing.price_ipv4_monthly,
             price_setup_fee=listing.price_setup_fee,
             fetched_at=listing.fetched_at,
             # Derived cost metrics
@@ -142,18 +144,21 @@ class CostMetricsEnricher:
             price_per_tb_disk=price_per_tb_disk,
         )
 
-    def _compute_price_effective_monthly(self, price_base: int, price_setup_fee: int) -> int:
+    def _compute_price_effective_monthly(
+        self, price_base: int, price_ipv4_monthly: int, price_setup_fee: int
+    ) -> int:
         """
-        Compute effective monthly price (base + setup fee, full-value non-amortized).
+        Compute first-month price (base + IPv4 + setup fee, full-value non-amortized).
 
         Args:
             price_base: Monthly base price in EUR cents
+            price_ipv4_monthly: Monthly primary IPv4 price in EUR cents
             price_setup_fee: One-time setup fee in EUR cents
 
         Returns:
             Effective monthly price in EUR cents
         """
-        return price_base + price_setup_fee
+        return price_base + price_ipv4_monthly + price_setup_fee
 
     def _compute_price_per_benchmark_point_single(
         self, price_effective_monthly: int, single_thread_score: Optional[int], benchmark_matched: bool

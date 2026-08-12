@@ -49,7 +49,7 @@ class RawListing:
     - ram_gb, ram_ecc
     - disks (as list of DiskSpec)
     - uplink_speed (Mbit/s)
-    - price_base, price_setup_fee (EUR cents)
+    - price_base, price_ipv4_monthly, price_setup_fee (EUR cents)
     - fetched_at (timestamp)
     """
 
@@ -65,6 +65,7 @@ class RawListing:
     price_base: int  # EUR cents
     price_setup_fee: int  # EUR cents
     fetched_at: datetime
+    price_ipv4_monthly: int = 0  # EUR cents for the primary IPv4 address
 
 
 class HetznerAuctionFetcher:
@@ -241,8 +242,12 @@ class HetznerAuctionFetcher:
         prices = item.get("Prices", {})
         monthly_section = prices.get("monthly", {})
         setup_section = prices.get("setup", {})
+        ip_prices = item.get("IPPrices", {})
 
         price_base = self._parse_price_cents(monthly_section.get("EUR", 0))
+        price_ipv4_monthly = self._parse_price_cents(
+            ip_prices.get("monthly", {}).get("EUR", 0)
+        )
         price_setup_fee = self._parse_price_cents(setup_section.get("EUR", 0))
 
         # Extract disks (separate bead - leave current implementation alone)
@@ -259,6 +264,7 @@ class HetznerAuctionFetcher:
             disks=disks,
             uplink_speed=uplink_speed,
             price_base=price_base,
+            price_ipv4_monthly=price_ipv4_monthly,
             price_setup_fee=price_setup_fee,
             fetched_at=fetched_at,
         )

@@ -96,6 +96,7 @@ class TestParquetSchema:
                 "ram_ecc",
                 "uplink_speed",
                 "price_base",
+                "price_ipv4_monthly",
                 "price_setup_fee",
                 "price_effective_monthly",
                 "price_per_benchmark_point_single",
@@ -122,6 +123,7 @@ class TestParquetSchema:
             assert table.schema.field("benchmark_matched").type == "bool"
             assert table.schema.field("ram_gb").type == "int32"
             assert table.schema.field("price_base").type == "int32"
+            assert table.schema.field("price_ipv4_monthly").type == "int32"
             assert table.schema.field("price_per_benchmark_point_multi").type == "float64"
 
 

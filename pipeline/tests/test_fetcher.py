@@ -54,6 +54,7 @@ def sample_hetzner_response():
                     "setup": {"EUR": 0, "USD": 0},
                     "fixed": False
                 },
+                "IPPrices": {"monthly": {"EUR": 1.70, "USD": 1.90}, "Amount": 1},
                 "Details": {
                     "Description": ["IPv4", "iNIC", "SSD"],
                     "Information": ["1 x RAM 32768 MB DDR4 ECC", "2 x SSD 480 GB Datacenter", "NIC 1 Gbit"],
@@ -190,6 +191,7 @@ class TestRawListingSchema:
         assert all(isinstance(d, DiskSpec) for d in listing.disks)
         assert isinstance(listing.uplink_speed, int)
         assert isinstance(listing.price_base, int)
+        assert isinstance(listing.price_ipv4_monthly, int)
         assert isinstance(listing.price_setup_fee, int)
         assert isinstance(listing.fetched_at, datetime)
 
@@ -225,6 +227,7 @@ class TestFetcherParsing:
         assert listings[0].disks == [DiskSpec(type="SSD", count=2, capacity_gb=480)]
         assert listings[0].uplink_speed == 1000
         assert listings[0].price_base == 1999  # €19.99 in cents
+        assert listings[0].price_ipv4_monthly == 170
         assert listings[0].price_setup_fee == 0
         assert listings[0].available_from is None  # Not present in live feed
         assert listings[0].location == "FSN"
