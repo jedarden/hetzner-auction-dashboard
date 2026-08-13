@@ -144,6 +144,14 @@ E3-1275 v5,Intel Xeon E3-1275 v5
 E3-1275v5,Intel Xeon E3-1275 v5
 Intel Xeon E3-1275v5,Intel Xeon E3-1275 v5
 
+# Xeon E3-1275 v6 aliases (entry single-socket workstation Xeon)
+Intel Xeon E3-1275 v6,Intel Xeon E3-1275 v6
+Xeon E3-1275 v6,Intel Xeon E3-1275 v6
+E3-1275 v6,Intel Xeon E3-1275 v6
+E3-1275v6,Intel Xeon E3-1275 v6
+Intel Xeon E3-1275v6,Intel Xeon E3-1275 v6
+Intel Xeon E3-1275V6,Intel Xeon E3-1275 v6
+
 # Xeon E-21xxG entry workstation Xeon aliases
 Intel Xeon E-2176G,Intel Xeon E-2176G
 Xeon E-2176G,Intel Xeon E-2176G
@@ -160,3 +168,8 @@ W-2145,Intel Xeon W-2145
 # Xeon Gold 5412U aliases
 Intel Xeon Gold 5412U,Intel Xeon Gold 5412U
 Xeon Gold 5412U,Intel Xeon Gold 5412U
+
+# Xeon Gold 6731P alias (PassMark itself drops "Gold" for this Xeon 6-series SKU;
+# Hetzner's own product page uses "Gold" - covering both in case auction listings vary)
+Intel Xeon 6731P,Intel Xeon Gold 6731P
+Xeon 6731P,Intel Xeon Gold 6731P
