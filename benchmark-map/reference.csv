@@ -97,3 +97,4 @@ passmark_id,cpu_model,single_thread_score,multi_thread_score,cores,threads
 6423,Intel Core Ultra 7 265,4690,49664,20,20
 7319,Intel Xeon Gold 6731P,2107,52790,32,64
 2334,Intel Xeon E3-1271 v3,2243,7416,4,8
+1969,Intel Xeon E3-1270 v3,2187,7233,4,8
