@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hetzner-auction-pipeline"
-version = "0.1.13"
+version = "0.1.14"
 description = "Pipeline for fetching, enriching, and publishing Hetzner auction data"
 authors = [
     {name = "jedarden", email = "jedarden@example.com"}

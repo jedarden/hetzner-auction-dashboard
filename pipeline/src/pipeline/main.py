@@ -89,12 +89,14 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     logger.info(f"Enriched {len(enriched)} listings")
 
     # Fetch-back the currently-live config_history.parquet before folding
-    # this cycle's prices into it (v2 historical-value feature). A 404
-    # (nothing published yet) starts from empty history; any other failure
-    # raises HistoryFetchError, which run_once's caller (main_loop) handles
-    # the same way as a Hetzner feed failure -- abort this cycle, keep the
-    # last published snapshot, retry next cycle. See HistoryFetchError's
-    # docstring for why that distinction matters.
+    # this cycle's prices into it (v2 historical-value feature). "Nothing
+    # published yet" (a 404, or -- the actual case on Cloudflare Pages,
+    # which never 404s -- a 200 serving the SPA's index.html) starts from
+    # empty history; any other failure raises HistoryFetchError, which
+    # run_once's caller (main_loop) handles the same way as a Hetzner feed
+    # failure -- abort this cycle, keep the last published snapshot, retry
+    # next cycle. See HistoryFetchError's docstring for why that distinction
+    # matters.
     history_url = f"{CONFIG_HISTORY_BASE_URL}/{CONFIG_HISTORY_KEY}"
     history = await fetch_history(history_url)
     now = datetime.now(UTC)

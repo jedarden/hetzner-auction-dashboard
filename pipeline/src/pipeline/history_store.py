@@ -61,18 +61,21 @@ HISTORY_SCHEMA = pa.schema([
 class HistoryFetchError(Exception):
     """
     Raised when fetching the live config_history.parquet fails for a reason
-    OTHER than "it doesn't exist yet" (a genuine 404 -- expected on the very
-    first run, or the first run after a fresh Pages project).
+    OTHER than "it doesn't exist yet" -- either a genuine 404, or (the actual
+    case on Cloudflare Pages, which never 404s -- see fetch_history's own
+    comment) a 200 response whose content-type is text/html, the SPA
+    fallback served for any undeployed path. Both are expected on the very
+    first run, or the first run after a fresh Pages project.
 
-    Any other failure -- network error, timeout, non-404 HTTP status,
-    corrupt/unparseable Parquet bytes -- must NOT be treated the same as
-    "no history yet, start empty": that would silently discard every prior
-    cycle's accumulated history and, on this cycle's write, publish a
-    config_history.parquet containing only the current cycle's data. The
-    whole point of this exception is to make that distinction so callers can
-    abort the run instead (matching Pipeline Run Lifecycle's "on failure at
-    any step, abort immediately... the previously published deployment keeps
-    serving unchanged").
+    Any other failure -- network error, timeout, non-404/non-text-html-200
+    status, corrupt/unparseable Parquet bytes actually served as a file --
+    must NOT be treated the same as "no history yet, start empty": that
+    would silently discard every prior cycle's accumulated history and, on
+    this cycle's write, publish a config_history.parquet containing only the
+    current cycle's data. The whole point of this exception is to make that
+    distinction so callers can abort the run instead (matching Pipeline Run
+    Lifecycle's "on failure at any step, abort immediately... the previously
+    published deployment keeps serving unchanged").
     """
     pass
 
@@ -139,6 +142,26 @@ async def fetch_history(url: str, timeout: float = 30.0) -> dict[str, ConfigHist
 
     if response.status_code != 200:
         raise HistoryFetchError(f"Unexpected status {response.status_code} fetching {url}")
+
+    # Cloudflare Pages does NOT 404 a nonexistent path -- it serves the SPA's
+    # index.html with a 200 (confirmed empirically 2026-08-14: every path
+    # tried, real or made-up, returned 200; only content-type distinguishes
+    # a real deployed file, application/octet-stream for a .parquet, from
+    # the text/html fallback). Without this check, the very first cycle
+    # (before config_history.parquet has ever been published) gets a 200
+    # containing HTML, fails to parse it as Parquet, and raises
+    # HistoryFetchError -- which aborts every cycle forever, since the file
+    # this checks for never gets a chance to be created. Must be checked
+    # BEFORE attempting to parse, not inferred from a parse failure, so a
+    # genuinely corrupt real Parquet file (content-type
+    # application/octet-stream) still raises HistoryFetchError as intended.
+    content_type = response.headers.get("content-type", "")
+    if content_type.startswith("text/html"):
+        logger.info(
+            f"No published config_history.parquet yet at {url} "
+            f"(Cloudflare Pages SPA fallback returned text/html, bootstrap)"
+        )
+        return {}
 
     try:
         table = pq.read_table(BytesIO(response.content))
