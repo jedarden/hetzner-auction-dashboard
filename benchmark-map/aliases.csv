@@ -160,6 +160,14 @@ E3-1271v3,Intel Xeon E3-1271 v3
 Intel Xeon E3-1271v3,Intel Xeon E3-1271 v3
 Intel Xeon E3-1271V3,Intel Xeon E3-1271 v3
 
+# Xeon E3-1270 v3 aliases (entry single-socket workstation Xeon)
+Intel Xeon E3-1270 v3,Intel Xeon E3-1270 v3
+Xeon E3-1270 v3,Intel Xeon E3-1270 v3
+E3-1270 v3,Intel Xeon E3-1270 v3
+E3-1270v3,Intel Xeon E3-1270 v3
+Intel Xeon E3-1270v3,Intel Xeon E3-1270 v3
+Intel Xeon E3-1270V3,Intel Xeon E3-1270 v3
+
 # Xeon E-21xxG entry workstation Xeon aliases
 Intel Xeon E-2176G,Intel Xeon E-2176G
 Xeon E-2176G,Intel Xeon E-2176G
