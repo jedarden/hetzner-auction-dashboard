@@ -528,6 +528,22 @@
             margin-left: 10px;
         }
 
+        .atl-badge {
+            display: inline-block;
+            background: #fff3bf;
+            color: #856404;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-left: 6px;
+        }
+
+        .results-table .history-fallback {
+            font-size: 0.7rem;
+            color: #868e96;
+        }
+
         .staleness-indicator {
             background: #fff3bf;
             color: #856404;
@@ -710,7 +726,7 @@
         <header>
             <h1>Hetzner Auction Dashboard</h1>
             <p class="subtitle">Find the best value in Hetzner's server auction with benchmark-based pricing</p>
-            <span class="release-version" title="Dashboard release version">v0.1.10</span>
+            <span class="release-version" title="Dashboard release version">v0.1.13</span>
             <div class="best-deal-container">
                 <button class="best-deal-button" id="best-deal-now">
                     <span class="best-deal-icon">⚡</span>
@@ -867,6 +883,7 @@
                                 <th class="sortable numeric col-single" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_tb_disk">€/TB Disk <span class="sort-indicator" data-indicator="price_per_tb_disk"></span></th>
+                                <th class="sortable numeric" data-sort="price_percentile_vs_history" title="Cheaper-than-history rank for this exact CPU+RAM+disk+datacenter config (or the broader CPU model when too little history exists yet)">History <span class="sort-indicator" data-indicator="price_percentile_vs_history"></span></th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -1572,6 +1589,15 @@
                     case 'price_per_tb_disk':
                         comparison = a.price_per_tb_disk - b.price_per_tb_disk;
                         break;
+                    case 'price_percentile_vs_history':
+                        // NULLS FIRST, matching every other benchmark/value
+                        // column's convention: no history yet is flagged,
+                        // never silently sorted to the bottom.
+                        if (a.price_percentile_vs_history === null && b.price_percentile_vs_history === null) comparison = 0;
+                        else if (a.price_percentile_vs_history === null) comparison = -1;
+                        else if (b.price_percentile_vs_history === null) comparison = 1;
+                        else comparison = a.price_percentile_vs_history - b.price_percentile_vs_history;
+                        break;
                     case 'ram_gb':
                         comparison = a.ram_gb - b.ram_gb;
                         break;
@@ -1647,6 +1673,21 @@
                 const scoreMultiClass = listing.benchmark_multi !== null ? 'metric-good' : 'metric-unscored';
                 const scoreSingleClass = listing.benchmark_single !== null ? 'metric-good' : 'metric-unscored';
 
+                // History percentile cell: "cheaper than N% of every time
+                // this exact config has appeared" (v2 historical-value
+                // feature, docs/plan/plan.md). Null until the pipeline has
+                // published at least one config_history.parquet cycle.
+                const historyClass = listing.price_percentile_vs_history !== null ? 'metric-good' : 'metric-unscored';
+                const historyText = listing.price_percentile_vs_history !== null
+                    ? `Cheaper than ${Math.round(listing.price_percentile_vs_history * 100)}%`
+                    : 'N/A';
+                const atlBadge = listing.is_all_time_low ? '<span class="atl-badge" title="Lowest price ever recorded for this exact config">ATL</span>' : '';
+                const historyFallbackNote = (listing.price_percentile_vs_history !== null && listing.history_cohort_fallback)
+                    ? '<div class="history-fallback">vs. CPU model (thin data)</div>' : '';
+                const historyTitle = listing.price_percentile_vs_history !== null
+                    ? `Based on ${listing.history_sample_size} observation${listing.history_sample_size === 1 ? '' : 's'}${listing.history_cohort_fallback ? ' across this CPU model (too little data for this exact config yet)' : ' of this exact config'}`
+                    : 'No history recorded yet for this configuration';
+
                 return `
                     <tr>
                         <td class="cpu-cell">
@@ -1665,6 +1706,7 @@
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
+                        <td class="numeric ${historyClass}" title="${historyTitle}">${historyText}${atlBadge}${historyFallbackNote}</td>
                         <td><a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a></td>
                     </tr>
                 `;
@@ -1702,7 +1744,8 @@
                 cpu_model: 'CPU model',
                 benchmark_multi: 'Benchmark score (multi-thread)',
                 benchmark_single: 'Benchmark score (single-thread)',
-                cpu_cores: 'CPU cores'
+                cpu_cores: 'CPU cores',
+                price_percentile_vs_history: 'Historical value percentile'
             };
             const directionArrow = currentSortDirection === 'asc' ? '↑' : '↓';
             document.getElementById('current-sort').textContent = `${labels[sortBy] || sortBy} ${directionArrow}`;
@@ -2405,6 +2448,15 @@
                     ? row.price_per_benchmark_point_single / 100 : null,
                 price_per_gb_ram: (row.price_per_gb_ram || 0) / 100,
                 price_per_tb_disk: (row.price_per_tb_disk || 0) / 100,
+                // Fraction in [0, 1] -- "cheaper than N% of every time this
+                // exact config has appeared" (or the broader CPU cohort,
+                // see history_cohort_fallback), null until any history
+                // exists for the config at all. Not a EUR-cents field, so
+                // no /100 conversion like the price_* fields above.
+                price_percentile_vs_history: row.price_percentile_vs_history ?? null,
+                is_all_time_low: row.is_all_time_low || false,
+                history_sample_size: row.history_sample_size || 0,
+                history_cohort_fallback: row.history_cohort_fallback || false,
                 location: row.location || 'unknown',
                 uplink_speed: row.uplink_speed || 0,
                 ecc_memory: row.ram_ecc || false

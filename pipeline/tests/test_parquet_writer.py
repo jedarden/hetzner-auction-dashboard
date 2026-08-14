@@ -103,6 +103,12 @@ class TestParquetSchema:
                 "price_per_benchmark_point_multi",
                 "price_per_gb_ram",
                 "price_per_tb_disk",
+                "price_percentile_vs_history",
+                "price_per_benchmark_point_single_percentile_vs_history",
+                "price_per_benchmark_point_multi_percentile_vs_history",
+                "is_all_time_low",
+                "history_sample_size",
+                "history_cohort_fallback",
                 "fetched_at",
                 "disks",
             ]
@@ -305,6 +311,46 @@ class TestDataIntegrity:
 
             # price_per_tb_disk = 7998 / 0.96 ≈ 8331.25
             assert abs(table.column("price_per_tb_disk")[0].as_py() - 8331.25) < 0.01
+
+
+class TestHistoryFields:
+    """Test the v2 historical-value columns default correctly when the
+    history_store post-processing pass hasn't touched a listing."""
+
+    def test_defaults_when_history_not_computed(self):
+        """A listing that never went through compute_percentiles() should
+        write NULL percentiles, is_all_time_low=False, sample_size=0."""
+        listing = _make_sample_listing()
+        writer = ParquetWriter()
+
+        with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
+            writer.write_listings([listing], tmp.name)
+            table = pq.read_table(tmp.name)
+
+            assert table.column("price_percentile_vs_history")[0].is_valid is False
+            assert table.column("is_all_time_low")[0].as_py() is False
+            assert table.column("history_sample_size")[0].as_py() == 0
+            assert table.column("history_cohort_fallback")[0].as_py() is False
+
+    def test_history_fields_round_trip(self):
+        """History fields set explicitly should round-trip through Parquet."""
+        listing = _make_sample_listing()
+        listing.price_percentile_vs_history = 0.82
+        listing.price_per_benchmark_point_multi_percentile_vs_history = 0.82
+        listing.price_per_benchmark_point_single_percentile_vs_history = 0.82
+        listing.is_all_time_low = True
+        listing.history_sample_size = 12
+        listing.history_cohort_fallback = True
+
+        writer = ParquetWriter()
+        with tempfile.NamedTemporaryFile(suffix=".parquet") as tmp:
+            writer.write_listings([listing], tmp.name)
+            table = pq.read_table(tmp.name)
+
+            assert table.column("price_percentile_vs_history")[0].as_py() == 0.82
+            assert table.column("is_all_time_low")[0].as_py() is True
+            assert table.column("history_sample_size")[0].as_py() == 12
+            assert table.column("history_cohort_fallback")[0].as_py() is True
 
 
 class TestCompressionOptions:

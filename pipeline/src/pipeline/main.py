@@ -17,11 +17,19 @@ import os
 import sys
 import tempfile
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pipeline.cpu_matcher import CpuMatcher
 from pipeline.enricher import enrich_listings_batch
 from pipeline.fetcher import FetchError, HetznerAuctionFetcher
+from pipeline.history_store import (
+    HistoryFetchError,
+    compute_percentiles,
+    fetch_history,
+    update_history,
+    write_history,
+)
 from pipeline.parquet_writer import write_listings_to_parquet
 from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
@@ -47,6 +55,16 @@ PARQUET_SNAPSHOT_KEY = os.environ.get("PARQUET_SNAPSHOT_KEY", "current_snapshot.
 UNMATCHED_REPORT_KEY = os.environ.get("UNMATCHED_REPORT_KEY", "unmatched-cpus.json")
 WEB_CACHE_DIR = Path(os.environ.get("WEB_CACHE_DIR", "/tmp/web-cache"))
 
+# v2 historical-value feature (docs/plan/plan.md "Historical stats: value
+# percentile & all-time-low"). CONFIG_HISTORY_BASE_URL is the live site's own
+# origin -- config_history.parquet is fetched back from the *published*
+# deployment each cycle before being updated and rewritten, same pattern as
+# web_fetcher.py's per-cycle web/ refresh.
+CONFIG_HISTORY_KEY = os.environ.get("CONFIG_HISTORY_KEY", "config_history.parquet")
+CONFIG_HISTORY_BASE_URL = os.environ.get(
+    "CONFIG_HISTORY_BASE_URL", "https://hetzner-auction-dashboard.pages.dev"
+)
+
 
 async def run_once(cpu_matcher: CpuMatcher) -> None:
     fetcher = HetznerAuctionFetcher()
@@ -70,13 +88,29 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     enriched = enrich_listings_batch(raw_listings, cpu_matcher=cpu_matcher)
     logger.info(f"Enriched {len(enriched)} listings")
 
+    # Fetch-back the currently-live config_history.parquet before folding
+    # this cycle's prices into it (v2 historical-value feature). A 404
+    # (nothing published yet) starts from empty history; any other failure
+    # raises HistoryFetchError, which run_once's caller (main_loop) handles
+    # the same way as a Hetzner feed failure -- abort this cycle, keep the
+    # last published snapshot, retry next cycle. See HistoryFetchError's
+    # docstring for why that distinction matters.
+    history_url = f"{CONFIG_HISTORY_BASE_URL}/{CONFIG_HISTORY_KEY}"
+    history = await fetch_history(history_url)
+    now = datetime.now(UTC)
+    update_history(history, enriched, now)
+    compute_percentiles(history, enriched)
+    logger.info(f"Config history now tracks {len(history)} distinct configurations")
+
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:
         deploy_dir = Path(tmpdir)
         parquet_path = deploy_dir / PARQUET_SNAPSHOT_KEY
         json_path = deploy_dir / UNMATCHED_REPORT_KEY
+        history_path = deploy_dir / CONFIG_HISTORY_KEY
 
         write_listings_to_parquet(enriched, parquet_path)
         reporter.generate_report(json_path)
+        write_history(history, history_path)
 
         # Fetch latest web/ content from GitHub (per-cycle refresh)
         try:
@@ -113,6 +147,10 @@ async def main_loop() -> None:
             # Per Pipeline Run Lifecycle: abort before any write, keep serving
             # the last snapshot, retry next cycle.
             logger.error(f"Fetch failed, keeping last published snapshot: {e}")
+        except HistoryFetchError as e:
+            # Same handling as a feed failure -- see HistoryFetchError's
+            # docstring for why this must NOT fall back to an empty history.
+            logger.error(f"Config-history fetch-back failed, keeping last published snapshot: {e}")
         except PagesPublisherError as e:
             logger.error(f"Publish failed, live deployment untouched: {e}")
         except Exception:
