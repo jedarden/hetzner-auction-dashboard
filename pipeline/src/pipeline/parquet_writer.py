@@ -118,6 +118,19 @@ class ParquetWriter:
             ],
             "price_per_gb_ram": [listing.price_per_gb_ram for listing in listings],
             "price_per_tb_disk": [listing.price_per_tb_disk for listing in listings],
+            # v2 historical-value fields (see enricher.py's EnrichedListing)
+            "price_percentile_vs_history": [
+                listing.price_percentile_vs_history for listing in listings
+            ],
+            "price_per_benchmark_point_single_percentile_vs_history": [
+                listing.price_per_benchmark_point_single_percentile_vs_history for listing in listings
+            ],
+            "price_per_benchmark_point_multi_percentile_vs_history": [
+                listing.price_per_benchmark_point_multi_percentile_vs_history for listing in listings
+            ],
+            "is_all_time_low": [listing.is_all_time_low for listing in listings],
+            "history_sample_size": [listing.history_sample_size for listing in listings],
+            "history_cohort_fallback": [listing.history_cohort_fallback for listing in listings],
             # Timestamp
             "fetched_at": [self._serialize_datetime(listing.fetched_at) for listing in listings],
             # Disks (list of structs)
@@ -178,6 +191,13 @@ class ParquetWriter:
             pa.field("price_per_benchmark_point_multi", pa.float64()),
             pa.field("price_per_gb_ram", pa.float64()),
             pa.field("price_per_tb_disk", pa.float64()),
+            # v2 historical-value fields (see enricher.py's EnrichedListing)
+            pa.field("price_percentile_vs_history", pa.float64()),  # None until history exists
+            pa.field("price_per_benchmark_point_single_percentile_vs_history", pa.float64()),
+            pa.field("price_per_benchmark_point_multi_percentile_vs_history", pa.float64()),
+            pa.field("is_all_time_low", pa.bool_()),
+            pa.field("history_sample_size", pa.int32()),
+            pa.field("history_cohort_fallback", pa.bool_()),
             # Timestamp
             pa.field("fetched_at", pa.string()),  # ISO datetime string
             # Disks (list of structs)

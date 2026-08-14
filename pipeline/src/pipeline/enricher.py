@@ -69,6 +69,23 @@ class EnrichedListing:
     price_per_tb_disk: Optional[float]  # EUR cents per TB disk capacity
     price_ipv4_monthly: int = 0  # EUR cents for the primary IPv4 address
 
+    # v2 historical-value fields (docs/plan/plan.md "Historical stats: value
+    # percentile & all-time-low"). Left at these defaults by the enricher
+    # itself -- CostMetricsEnricher.enrich_listing() has no access to other
+    # listings or the config_history.parquet state it depends on. They're
+    # filled in by pipeline.history_store.compute_percentiles() as a
+    # separate post-processing pass in main.py's run_once(), mutating the
+    # already-constructed EnrichedListing objects in place. Defaulted (unlike
+    # every other field on this dataclass, deliberately not defaulted) so
+    # adding this whole feature layer doesn't force every existing
+    # EnrichedListing(...) call site across the test suite to be touched.
+    price_percentile_vs_history: Optional[float] = None  # 0.0-1.0, None if no history yet
+    price_per_benchmark_point_single_percentile_vs_history: Optional[float] = None
+    price_per_benchmark_point_multi_percentile_vs_history: Optional[float] = None
+    is_all_time_low: bool = False
+    history_sample_size: int = 0
+    history_cohort_fallback: bool = False
+
 
 class CostMetricsEnricher:
     """

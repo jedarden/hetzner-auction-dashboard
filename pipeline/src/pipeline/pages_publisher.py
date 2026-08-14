@@ -87,6 +87,14 @@ class PagesPublisher:
         self._verify_json(json_path)
         logger.info(f"Verified unmatched-cpus.json ({json_path.stat().st_size} bytes)")
 
+        # Verify config_history.parquet (v2 historical-value feature) -- same
+        # rigor as current_snapshot.parquet: a corrupt write here must never
+        # reach a live deploy, since it would poison every future cycle's
+        # fetch-back rather than just one bad snapshot.
+        history_path = self.directory / "config_history.parquet"
+        self._verify_parquet(history_path)
+        logger.info(f"Verified config_history.parquet ({history_path.stat().st_size} bytes)")
+
         # Deploy via wrangler
         deployment_info = self._wrangler_deploy()
 
@@ -94,6 +102,7 @@ class PagesPublisher:
             "directory": str(self.directory),
             "parquet_size": parquet_path.stat().st_size,
             "json_size": json_path.stat().st_size,
+            "history_size": history_path.stat().st_size,
             "deployment_info": deployment_info,
         }
 

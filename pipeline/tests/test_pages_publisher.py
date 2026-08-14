@@ -16,6 +16,7 @@ import pyarrow.parquet as pq
 
 from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
 from pipeline.cpu_matcher import BenchmarkMatch
+from pipeline.history_store import write_history
 from pipeline.parquet_writer import write_listings_to_parquet
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
 
@@ -289,9 +290,11 @@ class TestPublish:
             deploy_dir = Path(tmpdir)
             parquet_path = deploy_dir / "current_snapshot.parquet"
             json_path = deploy_dir / "unmatched-cpus.json"
+            history_path = deploy_dir / "config_history.parquet"
 
             write_listings_to_parquet([listing], parquet_path)
             reporter.generate_report(json_path)
+            write_history(_make_sample_history(), history_path)
 
             publisher = PagesPublisher(directory=deploy_dir)
             result = publisher.publish()
@@ -299,12 +302,31 @@ class TestPublish:
             assert result["directory"] == str(deploy_dir)
             assert result["parquet_size"] > 0
             assert result["json_size"] > 0
+            assert result["history_size"] > 0
             assert "deployment_info" in result
 
     def test_publish_missing_parquet_raises_error(self):
         """Should raise error when current_snapshot.parquet is missing."""
         with tempfile.TemporaryDirectory(prefix="hetzner-pages-test-") as tmpdir:
             deploy_dir = Path(tmpdir)
+
+            publisher = PagesPublisher(directory=deploy_dir)
+
+            with pytest.raises(PagesPublisherError, match="Parquet file not found"):
+                publisher.publish()
+
+    def test_publish_missing_history_raises_error(self):
+        """Should raise error when config_history.parquet is missing."""
+        with tempfile.TemporaryDirectory(prefix="hetzner-pages-test-") as tmpdir:
+            deploy_dir = Path(tmpdir)
+
+            listing = _make_sample_listing()
+            parquet_path = deploy_dir / "current_snapshot.parquet"
+            write_listings_to_parquet([listing], parquet_path)
+
+            reporter = UnmatchedCpuReporter()
+            json_path = deploy_dir / "unmatched-cpus.json"
+            reporter.generate_report(json_path)
 
             publisher = PagesPublisher(directory=deploy_dir)
 
@@ -382,6 +404,9 @@ class TestPublish:
             json_path = deploy_dir / "unmatched-cpus.json"
             json_path.write_text('{"test": "data"}')
 
+            history_path = deploy_dir / "config_history.parquet"
+            write_history(_make_sample_history(), history_path)
+
             publisher = PagesPublisher(directory=deploy_dir)
 
             with pytest.raises(PagesPublisherError, match="Wrangler deploy failed"):
@@ -389,6 +414,22 @@ class TestPublish:
 
 
 # Helper functions
+
+def _make_sample_history():
+    """Minimal valid config_history dict for config_history.parquet fixtures."""
+    from pipeline.history_store import ConfigHistoryEntry
+
+    return {
+        "test-sig": ConfigHistoryEntry(
+            config_signature="test-sig",
+            cpu_key="Intel Xeon E5-2680 v4",
+            first_observed_at="2026-08-14T00:00:00+00:00",
+            last_observed_at="2026-08-14T00:00:00+00:00",
+            min_price_effective_monthly=2999,
+            price_histogram={2999: 1},
+        )
+    }
+
 
 def _create_publisher():
     """Create a test publisher with environment variables set."""
