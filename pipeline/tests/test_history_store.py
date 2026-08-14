@@ -344,6 +344,27 @@ class TestFetchHistory:
         assert history == {}
 
     @pytest.mark.asyncio
+    async def test_bootstrap_200_html_fallback_returns_empty_history_not_an_error(self):
+        # Cloudflare Pages doesn't 404 an undeployed path -- it serves the
+        # SPA's index.html with a 200. Empirically confirmed 2026-08-14 (see
+        # fetch_history's own comment): this, not a real 404, is the actual
+        # bootstrap signal in production, and must not raise.
+        mock_response = MagicMock(
+            status_code=200,
+            content=b"<!doctype html><html>...</html>",
+            headers={"content-type": "text/html; charset=utf-8"},
+        )
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock()
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            history = await fetch_history("https://example.pages.dev/config_history.parquet")
+
+        assert history == {}
+
+    @pytest.mark.asyncio
     async def test_valid_200_response_parses_correctly(self):
         listing = _make_listing()
         history = update_history({}, [listing], datetime.now(UTC))
@@ -353,7 +374,11 @@ class TestFetchHistory:
         buf = io.BytesIO()
         pq.write_table(table, buf)
 
-        mock_response = MagicMock(status_code=200, content=buf.getvalue())
+        mock_response = MagicMock(
+            status_code=200,
+            content=buf.getvalue(),
+            headers={"content-type": "application/octet-stream"},
+        )
         mock_client = AsyncMock()
         mock_client.get.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -397,7 +422,14 @@ class TestFetchHistory:
 
     @pytest.mark.asyncio
     async def test_corrupt_parquet_bytes_raises_history_fetch_error(self):
-        mock_response = MagicMock(status_code=200, content=b"not a parquet file")
+        # A real deployed file (application/octet-stream, not the SPA
+        # fallback's text/html) that fails to parse -- must NOT be treated
+        # as bootstrap-empty.
+        mock_response = MagicMock(
+            status_code=200,
+            content=b"not a parquet file",
+            headers={"content-type": "application/octet-stream"},
+        )
         mock_client = AsyncMock()
         mock_client.get.return_value = mock_response
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
