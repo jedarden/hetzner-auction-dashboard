@@ -140,10 +140,7 @@
 
         async function initDuckDB() {
             const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm');
-            const browser = new duckdb.AsyncDuckDB(
-                new duckdb.ConsoleLogger(duckdb.LogLevel.INFO),
-                new duckdb.BrowserFileSystem()
-            );
+            const browser = new duckdb.browser();
 
             await browser.instantiate({
                 path: 'duckdb.wasm',
@@ -308,7 +305,7 @@
             }
         }
 
-        async function runSampleQueries() {{
+        async function runSampleQueries() {
             const queryResultsDiv = document.getElementById('query-results');
             queryResultsDiv.style.display = 'block';
 
@@ -340,50 +337,50 @@
                 WHERE benchmark_matched = true
             `);
             displayQueryResult('query3-result', q3Result);
-        }}
+        }
 
-        function addTestSection(title, message) {{
+        function addTestSection(title, message) {
             const resultsDiv = document.getElementById('test-results');
             const section = document.createElement('div');
             section.className = 'test-section';
-            section.innerHTML = `<div class="test-title">${{title}}</div><div>${{message}}</div>`;
+            section.innerHTML = `<div class="test-title">${title}</div><div>${message}</div>`;
             resultsDiv.appendChild(section);
-        }}
+        }
 
-        function markTestPass(title) {{
+        function markTestPass(title) {
             const sections = document.querySelectorAll('.test-section');
             const lastSection = sections[sections.length - 1];
-            lastSection.innerHTML = `<div class="test-title">✅ ${{title}}</div><div class="status passed">Passed</div>`;
-        }}
+            lastSection.innerHTML = `<div class="test-title">✅ ${title}</div><div class="status passed">Passed</div>`;
+        }
 
-        function displayQueryResult(elementId, result) {{
+        function displayQueryResult(elementId, result) {
             const element = document.getElementById(elementId);
             const rows = result.toArray();
 
-            if (rows.length === 0) {{
+            if (rows.length === 0) {
                 element.innerHTML = '<div class="query-result">No results</div>';
                 return;
-            }}
+            }
 
             const headers = Object.keys(rows[0]);
             let html = '<table class="query-result"><tr>';
-            headers.forEach(h => html += `<th>${{h}}</th>`);
+            headers.forEach(h => html += `<th>${h}</th>`);
             html += '</tr>';
 
-            rows.forEach(row => {{
+            rows.forEach(row => {
                 html += '<tr>';
-                headers.forEach(h => {{
+                headers.forEach(h => {
                     let value = row[h];
                     if (value === null) value = 'NULL';
                     else if (typeof value === 'object') value = JSON.stringify(value);
                     else if (typeof value === 'number' && !Number.isInteger(value)) value = value.toFixed(2);
-                    html += `<td>${{value}}</td>`;
-                }});
+                    html += `<td>${value}</td>`;
+                });
                 html += '</tr>';
-            }});
+            });
             html += '</table>';
             element.innerHTML = html;
-        }}
+        }
 
         // Make functions globally available
         window.runConformanceTests = runConformanceTests;

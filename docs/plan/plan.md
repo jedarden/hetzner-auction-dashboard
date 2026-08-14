@@ -1,6 +1,6 @@
 # hetzner-auction-dashboard Plan
 
-_Last updated: 2026-08-06._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it.
+_Last updated: 2026-08-12._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it.
 
 ## Overview
 
@@ -100,7 +100,7 @@ Two independent halves connected only by a Parquet file:
 
 Cache staleness after a deploy is bounded the same way ADR-4 bounded it for R2 — a short `Cache-Control` on just the two data files, now via a `_headers` file in `web/` rather than a per-object header set at R2 write time (see ADR-7).
 
-v2 history files (never read-modify-write a growing file — see Storage pattern for history) still apply the same fetch/normalize/compute discipline; how they get published under the Pages-bundling model is an open detail deferred to v2, since v1 doesn't need it yet.
+v2's percentile/all-time-low feature has a resolved storage design (`config_history.parquet` — see "Historical stats: value percentile & all-time-low"): it's fetched back over HTTP and rewritten each cycle, the same fetch-back-before-republish pattern this lifecycle already uses for `web/`, `current_snapshot.parquet`, and `unmatched-cpus.json` — never a read-modify-write of a growing raw log. Velocity/lifetime/market-trend candidates remain deferred to v2 with no storage design yet, since v1 doesn't need them.
 
 ### Concurrency Model
 
@@ -353,38 +353,52 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
 
 Not part of the initial build — noted so later scope decisions don't have to be re-derived from scratch:
 
-### Historical stats
+### Historical stats: value percentile & all-time-low — design resolved 2026-08-12
 
-The 10-minute pipeline cadence means every run is a snapshot, so a real time series accumulates for free — worth deriving once v1's live view is solid. Grouped by what each stat is for:
+**Resolved, superseding the R2-based "Storage pattern for history" this section used to contain.** Answers: how does this listing's price compare to the extremes/distribution of every time this exact config has ever been auctioned.
 
-**Per-config price/value history** (keyed by a config signature — CPU model + RAM + disk layout + datacenter — not by Hetzner's `listing_id`, since the same effective config reappears under a new listing ID every auction cycle):
-- All-time-low tracked *separately* for raw price, `price_per_benchmark_point_single`, and `price_per_benchmark_point_multi` — consistent with the plan's "no blended score" stance (and v1's single/multi split, see ADR-3), these stay independent facts, never blended into one.
-- Price velocity: average price (and price-per-benchmark-point) drop per snapshot tick while a listing is live — signals whether a listing is still falling or near its floor.
-- Listing lifetime: how many ticks a listing survives before disappearing — a proxy for how fast that config sells, i.e. how much patience a given deal affords.
+**Storage: `config_history.parquet`, one row per config signature** (CPU model + RAM + disk layout + datacenter — not `listing_id`, since the same effective config reappears under a new listing ID every auction cycle):
 
-**Market-level trends** (aggregate, not per-listing):
-- Rolling median/percentile of `price_per_benchmark_point_multi` (and separately, `price_per_benchmark_point_single`), overall and per CPU family, so a current listing can be flagged "N% below its trailing 7/30-day value baseline" — a benchmark-normalized version of Server Radar's raw-price index, which is exactly the combination the research found nobody has built.
-- Listing volume over time by CPU family, datacenter, RAM tier, disk type.
-- AMD vs. Intel value trend (price-per-benchmark-point, not just raw price).
-- Benchmark coverage rate over time (% of listings with a matched score) — an internal health metric for `benchmark-map/`; coverage regressions should be visible over time, not just inferable from the current unmatched-CPU report.
+```
+config_signature                    (key)
+first_observed_at
+last_observed_at
+total_observations                  (sum of price_histogram counts)
+min_price_effective_monthly         (all-time-low, kept explicit for O(1) lookup)
+price_histogram: LIST<STRUCT<price_effective_monthly: int, observation_count: int>>
+```
 
-**Decision-support fields** derived from the above, for later UI surfacing:
+A price histogram, not a raw per-tick log: for each config, `(price → count)` rather than one row per observation. Storage is bounded by *distinct prices a config has ever sold at*, not by tick count — Hetzner reuses price points for the same recurring hardware, so this compresses far better than an ever-growing raw log, and never needs a compaction step, because there's nothing per-tick accumulating to compact.
 
-- **Value percentile (headline stat).** Hetzner repeatedly auctions batches of the same decommissioned server model, so exact config signatures (CPU + RAM + disk layout + datacenter) recur naturally over time — that's a real historical distribution to rank against, not an approximation. For each current listing, compute where its `price_per_benchmark_point_multi` (and, separately, its raw price and `price_per_benchmark_point_single`) falls in the distribution of every prior observation of that *same* config signature — e.g. "cheaper than 85% of every time this exact config has ever appeared." This turns "is this a good deal" into a direct percentile instead of a guess.
-- **Cohort fallback.** A config needs enough accumulated duplicate observations for its own distribution to mean anything. Below some minimum sample count (exact threshold TBD once real data volume is known), fall back to ranking against the broader CPU-family cohort instead of the exact config — keeps newly-appeared or rare configs from showing a meaningless percentile off 1–2 data points.
-- An "at/near all-time-low" badge (separately for price and for price-per-benchmark-point), which is really the percentile stat's 0th-percentile special case.
+**No new storage technology needed.** The pipeline is stateless per run, but doesn't need to be for this: each cycle it fetches the currently-live `config_history.parquet` back over HTTP before publishing — the same fetch-back-before-republish pattern `web_fetcher.py` already uses for `web/`, and ADR-7's code-deploy build-command already uses for `current_snapshot.parquet`/`unmatched-cpus.json`. It updates the fetched table in memory (find-or-create each current listing's `(config_signature, price)` histogram entry, increment its count, bump `last_observed_at`, lower `min_price_effective_monthly` if applicable), rewrites the whole file, and deploys it alongside `current_snapshot.parquet` in the same `wrangler pages deploy` call. No Hive-partitioning: Cloudflare Pages Direct Upload re-uploads the entire deploy directory every cycle regardless of file count (ADR-7 — "every deploy is a complete new deployment"), so splitting history into partition files buys nothing here the way it would have under R2's per-object writes; one accumulating file is simpler and no worse.
 
-### Storage pattern for history
+**Percentile derivation** — rank a current listing's price against its config's histogram:
 
-**Stale as of ADR-7 (2026-08-06)** — this was designed against the R2-based v1 architecture; everything below assumes R2's object-storage semantics (arbitrary key count, cheap per-object writes) which no longer hold now that v1 publishes via Cloudflare Pages deployments instead. A Pages deployment realistically can't accumulate thousands of small per-tick history files the way an R2 bucket could (every deploy re-uploads the full file set, and Pages' 20,000/100,000-file-per-site ceiling — see Components — is a much tighter bound than R2 ever was). Revisit this whole subsection's storage mechanism when v2 is actually scoped; the *shape* of the data below (Hive-partitioned, immutable, summary-not-raw) likely still holds, but where it physically lives needs a fresh decision, not an inherited one.
+```
+percentile = sum(count for price, count in histogram if price >= current_price) / total_observations
+```
 
-Storing this without breaking the pipeline's stateless-per-run design (history can't just live in local pipeline state):
+i.e. "cheaper than N% of every time this exact config has appeared." An "at/near all-time-low" badge is this stat's 0th-percentile special case, not a separate computation.
 
-- **Never read-modify-write a growing file.** Rewriting an ever-larger Parquet file every 10 minutes has no real locking and gets slower/riskier as it grows — a bad fit regardless of storage backend.
-- Instead, each run writes one small **immutable, timestamped snapshot file**, Hive-partitioned by time (e.g. `history/dt=2026-08-02/1010.parquet`), containing that run's per-config *summary* rows (min price, min price-per-benchmark-point, listing count per config signature) rather than a full raw dump — keeps files small and bounded by distinct-config count, not total listings × every tick forever.
-- History files are append-only — written once, never mutated. DuckDB-WASM assembles the full history as one logical table via a glob over the partitioned files (`read_parquet('history/**/*.parquet')`); the client does the assembly at query time, not the pipeline.
-- The pipeline's per-run logic stays identical in spirit to the current-snapshot writer (fetch → compute → write-once) — it just also writes to this second, additive location.
-- Unbounded growth is a later problem, not a v1-of-this-feature one: a periodic compaction step (e.g. monthly, rolling raw 10-minute ticks into daily aggregates) can bound storage once this ships. Not needed to start.
+**One histogram serves all three value metrics, not three.** `config_signature` fixes the CPU model, which fixes `single_thread_score`/`multi_thread_score` for every observation sharing that signature — so `price_per_benchmark_point_multi` and `_single` are just `price_effective_monthly` divided by a per-config constant. Dividing by a positive constant doesn't change rank order, so the percentile computed from raw price *is* the percentile for both derived metrics too — consistent with ADR-3 (single/multi never blended), the three percentiles are still reported as independent output columns, they're just derived from one shared rank rather than three separately-maintained histograms.
+
+**Where the result lands:** computed server-side, once per cycle, and written as a plain derived column directly onto each listing's row in `current_snapshot.parquet` (e.g. `price_percentile_vs_history`) — consistent with the existing no-client-side-join principle (see What It Is NOT): the browser reads a precomputed number, it never queries `config_history.parquet` itself to produce the badge. That file exists purely as the pipeline's own persistent input across cycles.
+
+**Cohort fallback still applies:** below some minimum `total_observations` (exact threshold TBD once real data volume is known), a config's own histogram is too thin to rank against meaningfully — fall back to the broader CPU-family cohort instead of showing a percentile off 1–2 data points.
+
+**Known blind spot, confirmed by observation 2026-08-12:** the pipeline only samples every 10 minutes, so a listing that appears and is taken again within one tick is invisible to this design entirely — never recorded in `config_history.parquet`, never flagged by the percentile badge, regardless of how good the price was. Real instances of this have already been observed (configs available for only a couple of minutes before disappearing) — those are exactly the deals this feature is least able to catch, since it's a sampling-cadence problem upstream of any storage/index design, not something a smarter schema fixes. Closing this gap would mean polling more often than 10 minutes, which has its own cost under the current architecture (ADR-7: every cycle re-uploads the full Pages deployment).
+
+**Decision (2026-08-12): keep the 10-minute cadence, accept the blind spot.** Two reasons: (1) usage here isn't continuous real-time monitoring, so missing a deal that's gone in under 10 minutes is a real but acceptable cost, not a functional failure; (2) polling meaningfully faster risks Hetzner rate-limiting or blocking the fetcher outright, which would break the whole pipeline, not just this feature — a worse outcome than the blind spot it would fix. **Invalidation trigger:** revisit only if usage shifts toward wanting to catch flash deals in real time — and if it does, treat it as its own scoped change (fetch interval, its rate-limit risk, and its Pages-redeploy-cost tradeoff), not something to bolt onto the percentile feature.
+
+### Historical stats: velocity, listing lifetime, market-level trends — still open, storage not yet designed
+
+Not covered by `config_history.parquet` above — that structure deliberately drops the *time* dimension (it's a cumulative count per price, not a per-tick timeline), which is fine for percentile/all-time-low but can't answer anything that needs to know *when* an observation happened:
+
+- **Price velocity** — average price drop per snapshot tick while a specific listing is live. Needs per-tick data keyed by `listing_id` (not `config_signature` — this is about one listing's own lifetime, the opposite key choice from the percentile feature above), sorted `(listing_id, fetched_at)`.
+- **Listing lifetime** — how many ticks a listing survives before disappearing. Same `listing_id`-keyed timeline as velocity, and subject to the same 10-minute sampling blind spot above — a listing that lives under one tick reads identically to a listing that was never posted at all.
+- **Market-level trends** — rolling median/percentile of `price_per_benchmark_point_multi` over a trailing window, listing volume over time by CPU family/datacenter/RAM tier/disk type, AMD vs. Intel value trend, benchmark coverage rate over time. All need a time axis across the whole market, not a per-config cumulative count.
+
+If these get built, they need their own storage decision — most likely a genuine per-tick or per-day time-indexed structure (not a reuse of `config_history.parquet`'s histogram, which has no time axis to query against). Revisit when actually scoped rather than inheriting a design built for a different question.
 
 ### Other candidates
 
