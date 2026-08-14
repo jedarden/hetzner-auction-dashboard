@@ -1,3 +1,14 @@
-beads.db
-beads.db-shm
-beads.db-wal
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Lock files
+*.lock
+
+# Temporary files
+*.tmp
+*.temp
+
+# Journals
+*.journal
