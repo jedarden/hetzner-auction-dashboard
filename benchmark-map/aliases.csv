@@ -189,3 +189,13 @@ Xeon Gold 5412U,Intel Xeon Gold 5412U
 # Hetzner's own product page uses "Gold" - covering both in case auction listings vary)
 Intel Xeon 6731P,Intel Xeon Gold 6731P
 Xeon 6731P,Intel Xeon Gold 6731P
+
+# Ryzen Threadripper 2950X aliases
+AMD Ryzen Threadripper 2950X,AMD Ryzen Threadripper 2950X
+Ryzen Threadripper 2950X,AMD Ryzen Threadripper 2950X
+Threadripper 2950X,AMD Ryzen Threadripper 2950X
+
+# Xeon W-2245 aliases
+Intel Xeon W-2245,Intel Xeon W-2245
+Xeon W-2245,Intel Xeon W-2245
+W-2245,Intel Xeon W-2245
