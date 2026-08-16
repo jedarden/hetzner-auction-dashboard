@@ -100,3 +100,15 @@ passmark_id,cpu_model,single_thread_score,multi_thread_score,cores,threads
 1969,Intel Xeon E3-1270 v3,2187,7233,4,8
 3316,AMD Ryzen Threadripper 2950X,2452,29438,16,32
 3691,Intel Xeon W-2245,2730,19396,8,16
+2066,Intel Xeon E5-1650 v2,2033,9295,6,12
+86,AMD Athlon 64 X2 Dual Core 5600+,1019,911,2,2
+88,AMD Athlon 64 X2 Dual Core 6000+,1055,955,2,2
+71,AMD Athlon 64 3700+,435,394,1,1
+841,Intel Core i7-975,1479,3499,4,8
+866,Intel Core i7-980X,1522,6821,6,12
+896,Intel Core i7-3770,2070,6412,4,8
+6632,Intel Xeon 6741P,3195,100660,48,96
+3215,AMD EPYC 7551P,1772,38111,32,64
+1,Intel Core i7-2600,1730,5317,4,8
+1205,Intel Xeon E3-1275,1774,5487,4,8
+902,Intel Core i7-3930K,1737,8183,6,12
