@@ -199,3 +199,67 @@ Threadripper 2950X,AMD Ryzen Threadripper 2950X
 Intel Xeon W-2245,Intel Xeon W-2245
 Xeon W-2245,Intel Xeon W-2245
 W-2245,Intel Xeon W-2245
+
+# Xeon E5-1650 v2 aliases (single-socket LGA2011 workstation Xeon -- PX90/PX120/SX131)
+Intel Xeon E5-1650 v2,Intel Xeon E5-1650 v2
+Xeon E5-1650 v2,Intel Xeon E5-1650 v2
+E5-1650 v2,Intel Xeon E5-1650 v2
+E5-1650v2,Intel Xeon E5-1650 v2
+Intel Xeon E5-1650v2,Intel Xeon E5-1650 v2
+Intel Xeon E5-1650V2,Intel Xeon E5-1650 v2
+E5-1650V2,Intel Xeon E5-1650 v2
+
+# Athlon 64 X2 5600+ aliases (DS/X-line legacy -- Hetzner label includes "(Dual Core)")
+AMD Athlon 64 X2 Dual Core 5600+,AMD Athlon 64 X2 Dual Core 5600+
+AMD Athlon 64 X2 5600+,AMD Athlon 64 X2 Dual Core 5600+
+AMD Athlon 64 X2 5600+ (Dual Core),AMD Athlon 64 X2 Dual Core 5600+
+Athlon 64 X2 5600+,AMD Athlon 64 X2 Dual Core 5600+
+
+# Athlon 64 X2 6000+ aliases (DS/X-line legacy -- Hetzner label includes "(Dual Core)"; DS8000 uses "AMD64" shorthand)
+AMD Athlon 64 X2 Dual Core 6000+,AMD Athlon 64 X2 Dual Core 6000+
+AMD Athlon 64 X2 6000+,AMD Athlon 64 X2 Dual Core 6000+
+AMD Athlon 64 X2 6000+ (Dual Core),AMD Athlon 64 X2 Dual Core 6000+
+AMD64 X2 6000+,AMD Athlon 64 X2 Dual Core 6000+
+Athlon 64 X2 6000+,AMD Athlon 64 X2 Dual Core 6000+
+
+# Athlon 64 3700+ alias (X2-line legacy, single-core)
+AMD Athlon 64 3700+,AMD Athlon 64 3700+
+Athlon 64 3700+,AMD Athlon 64 3700+
+
+# Core i7-975 alias (EQ9 legacy)
+Intel Core i7-975,Intel Core i7-975
+Core i7-975,Intel Core i7-975
+i7-975,Intel Core i7-975
+
+# Core i7-980X alias (EQ10 legacy)
+Intel Core i7-980X,Intel Core i7-980X
+Core i7-980X,Intel Core i7-980X
+i7-980X,Intel Core i7-980X
+
+# Core i7-3770 alias (SX61 legacy)
+Intel Core i7-3770,Intel Core i7-3770
+Core i7-3770,Intel Core i7-3770
+i7-3770,Intel Core i7-3770
+
+# Xeon 6741P alias (DX154, current catalog -- PassMark itself omits "Gold" for this Xeon 6-series SKU, same pattern as 6731P)
+Intel Xeon 6741P,Intel Xeon 6741P
+Xeon 6741P,Intel Xeon 6741P
+
+# EPYC 7551P alias (DX180 legacy)
+AMD EPYC 7551P,AMD EPYC 7551P
+EPYC 7551P,AMD EPYC 7551P
+
+# Core i7-2600 alias (EX4/EX4S legacy)
+Intel Core i7-2600,Intel Core i7-2600
+Core i7-2600,Intel Core i7-2600
+i7-2600,Intel Core i7-2600
+
+# Xeon E3-1275 v1 alias (EX8/EX8S/X-line legacy -- original release, no version suffix)
+Intel Xeon E3-1275,Intel Xeon E3-1275
+Xeon E3-1275,Intel Xeon E3-1275
+E3-1275,Intel Xeon E3-1275
+
+# Core i7-3930K alias (EX10 legacy)
+Intel Core i7-3930K,Intel Core i7-3930K
+Core i7-3930K,Intel Core i7-3930K
+i7-3930K,Intel Core i7-3930K
