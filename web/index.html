@@ -731,7 +731,7 @@
         <header>
             <h1>Hetzner Auction Dashboard</h1>
             <p class="subtitle">Find the best value in Hetzner's server auction with benchmark-based pricing</p>
-            <span class="release-version" title="Dashboard release version">v0.1.18</span>
+            <span class="release-version" title="Dashboard release version">v0.1.19</span>
             <div class="best-deal-container">
                 <button class="best-deal-button" id="best-deal-now">
                     <span class="best-deal-icon">⚡</span>
@@ -832,9 +832,9 @@
                 <div class="filter-group">
                     <label for="listing-status">Offer status</label>
                     <select id="listing-status">
-                        <option value="active">Active deals</option>
-                        <option value="inactive">Expired deals</option>
-                        <option value="all">All deals</option>
+                        <option value="active">Present only</option>
+                        <option value="context">Present + previously seen</option>
+                        <option value="inactive">Previously seen only</option>
                     </select>
                 </div>
             </div>
@@ -1525,6 +1525,27 @@
             }).join(' + ');
         }
 
+        function selectContextualListings(sourceListings, status) {
+            const activeConfigSignatures = new Set(
+                sourceListings.filter(listing => listing.active).map(listing => listing.config_signature)
+            );
+            const bestMissingByConfig = new Map();
+            sourceListings.filter(listing => !listing.active).forEach(listing => {
+                if (activeConfigSignatures.has(listing.config_signature)) return;
+                const previous = bestMissingByConfig.get(listing.config_signature);
+                if (!previous || listing.price_effective_monthly < previous.price_effective_monthly ||
+                    (listing.price_effective_monthly === previous.price_effective_monthly &&
+                     new Date(listing.last_seen_at) > new Date(previous.last_seen_at))) {
+                    bestMissingByConfig.set(listing.config_signature, listing);
+                }
+            });
+            const present = sourceListings.filter(listing => listing.active);
+            const previouslySeen = Array.from(bestMissingByConfig.values());
+            if (status === 'inactive') return previouslySeen;
+            if (status === 'context') return present.concat(previouslySeen);
+            return present;
+        }
+
         function filterAndSortListings(presetSortBy = 'price_per_benchmark_point_multi', explicitDirection = null) {
             // Determine effective sort method based on user selection
             let sortBy = presetSortBy;
@@ -1554,10 +1575,14 @@
                 listing_status: document.getElementById('listing-status').value
             };
 
+            // Keep every present offer, but show at most one historical
+            // representative for configurations absent from today's auction.
+            // The representative is the cheapest lifecycle ever observed for
+            // that exact CPU+RAM+disk+datacenter signature.
+            const visibleUniverse = selectContextualListings(listings, filters.listing_status);
+
             // Filter listings
-            let filtered = listings.filter(listing => {
-                if (filters.listing_status === 'active' && !listing.active) return false;
-                if (filters.listing_status === 'inactive' && listing.active) return false;
+            let filtered = visibleUniverse.filter(listing => {
                 // CPU family filter
                 if (filters.cpu_family) {
                     const cpuLower = listing.cpu_model.toLowerCase();
@@ -1740,7 +1765,7 @@
                 return `
                     <tr class="${listing.active ? '' : 'inactive-listing'}">
                         <td class="cpu-cell">
-                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}${listing.active ? '' : '<span class="unscored-badge">Expired</span>'}</div>
+                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}${listing.active ? '' : '<span class="unscored-badge">Previously seen</span>'}</div>
                             ${listing.active ? '' : `<div class="cpu-sub">Last seen ${formatRelativeTime(listing.last_seen_at)}</div>`}
                             ${cloudSub}
                         </td>
@@ -1751,7 +1776,7 @@
                         <td class="disk-cell">${formatDiskConfig(listing)}</td>
                         <td>${getLocationLabel(listing.location)}</td>
                         <td class="numeric" title="${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : ''}">${listing.uplink_speed ? listing.uplink_speed + 'M' : 'N/A'}</td>
-                        <td class="numeric price-cell" title="Server €${listing.price_base.toFixed(2)} + primary IPv4 €${listing.price_ipv4_monthly.toFixed(2)}; excludes VAT">€${listing.price_effective_monthly.toFixed(2)}${listing.price_setup_fee > 0 ? `<div class="cpu-sub">€${listing.price_first_month.toFixed(2)} first month incl. setup</div>` : ''}</td>
+                        <td class="numeric price-cell" title="${listing.active ? `Server €${listing.price_base.toFixed(2)} + primary IPv4 €${listing.price_ipv4_monthly.toFixed(2)}; excludes VAT` : 'Lowest effective monthly price observed for this unavailable configuration'}">€${listing.price_effective_monthly.toFixed(2)}${listing.active && listing.price_setup_fee > 0 ? `<div class="cpu-sub">€${listing.price_first_month.toFixed(2)} first month incl. setup</div>` : listing.active ? '' : '<div class="cpu-sub">historical low</div>'}</td>
                         <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
@@ -2504,6 +2529,7 @@
             const rows = result.toArray();
             return rows.map(row => ({
                 id: row.listing_id,
+                config_signature: row.config_signature || row.listing_id,
                 cpu_model: row.cpu_normalized || row.cpu_raw || 'Unknown CPU',
                 // cpu_cores also feeds findEquivalentCloudInstance's core-count
                 // matching (previously always 0 before cpu_cores/cpu_threads
@@ -2547,7 +2573,21 @@
                 location: row.location || 'unknown',
                 uplink_speed: row.uplink_speed || 0,
                 ecc_memory: row.ram_ecc || false
-            }));
+            })).map(listing => {
+                if (listing.active || listing.lowest_price_effective_monthly === null) return listing;
+                listing.price_effective_monthly = listing.lowest_price_effective_monthly;
+                listing.price_first_month = listing.lowest_price_effective_monthly;
+                listing.price_per_benchmark_point_multi = listing.benchmark_multi
+                    ? listing.price_effective_monthly / listing.benchmark_multi : null;
+                listing.price_per_benchmark_point_single = listing.benchmark_single
+                    ? listing.price_effective_monthly / listing.benchmark_single : null;
+                listing.price_per_gb_ram = listing.ram_gb
+                    ? listing.price_effective_monthly / listing.ram_gb : 0;
+                const totalDisk = getTotalDiskSize(listing);
+                listing.price_per_tb_disk = totalDisk
+                    ? listing.price_effective_monthly / totalDisk : 0;
+                return listing;
+            });
         }
 
         // row.disks is a DuckDB LIST<STRUCT<type, count, capacity_gb>> --

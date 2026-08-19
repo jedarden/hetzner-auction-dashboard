@@ -33,7 +33,7 @@ FROM python:3.11-slim
 # Set labels
 LABEL maintainer="jedarden <jedarden@example.com>"
 LABEL description="Hetzner Auction Dashboard Pipeline - 10-minute refresh loop"
-LABEL version="0.1.18"
+LABEL version="0.1.19"
 
 # Set environment variables
 # PYTHONPATH: `pipeline/src` is copied to /app/src below (src-layout), but
