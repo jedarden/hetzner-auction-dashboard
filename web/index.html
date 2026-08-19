@@ -807,6 +807,11 @@
                 </div>
 
                 <div class="filter-group">
+                    <label for="min-cpu-benchmark">Minimum CPU Benchmark</label>
+                    <input type="number" id="min-cpu-benchmark" value="0" min="0" step="100" placeholder="Any">
+                </div>
+
+                <div class="filter-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="ecc-memory">
                         <label for="ecc-memory">ECC memory only</label>
@@ -1101,6 +1106,9 @@
             const cpuModel = document.getElementById('cpu-model').value;
             if (cpuModel) params.set('cpu_model', cpuModel);
 
+            const minCpuBenchmark = document.getElementById('min-cpu-benchmark').value;
+            if (minCpuBenchmark && parseInt(minCpuBenchmark) > 0) params.set('min_cpu_benchmark', minCpuBenchmark);
+
             const eccMemory = document.getElementById('ecc-memory').checked;
             if (eccMemory) params.set('ecc_memory', 'true');
 
@@ -1130,6 +1138,7 @@
                               params.has('location') ||
                               params.has('min_uplink') ||
                               params.has('cpu_model') ||
+                              params.has('min_cpu_benchmark') ||
                               params.has('ecc_memory') ||
                               params.has('benchmark_matched_only') ||
                               params.has('best_deal');
@@ -1213,6 +1222,9 @@
                         // Benchmark matched only
                         document.getElementById('benchmark-matched-only').checked = filters.benchmark_matched_only || false;
 
+                        // CPU benchmark (presets do not impose a minimum)
+                        document.getElementById('min-cpu-benchmark').value = 0;
+
                         // Location if in URL
                         if (params.has('location')) {
                             document.getElementById('location').value = params.get('location');
@@ -1257,6 +1269,10 @@
 
                 if (params.has('cpu_model')) {
                     document.getElementById('cpu-model').value = params.get('cpu_model');
+                }
+
+                if (params.has('min_cpu_benchmark')) {
+                    document.getElementById('min-cpu-benchmark').value = params.get('min_cpu_benchmark');
                 }
 
                 if (params.has('ecc_memory')) {
@@ -1417,6 +1433,9 @@
             // Disk size
             document.getElementById('min-disk').value = filters.disk_size_tb_min || 0;
 
+            // CPU benchmark (presets do not impose a minimum)
+            document.getElementById('min-cpu-benchmark').value = 0;
+
             // Benchmark matched only
             document.getElementById('benchmark-matched-only').checked = filters.benchmark_matched_only || false;
 
@@ -1442,6 +1461,7 @@
             // Reset all filter inputs
             document.getElementById('cpu-family').value = '';
             document.getElementById('cpu-model').value = '';
+            document.getElementById('min-cpu-benchmark').value = 0;
             document.getElementById('min-ram').value = 0;
             document.getElementById('max-price').value = '';
             document.getElementById('disk-type').value = '';
@@ -1501,6 +1521,7 @@
             const filters = {
                 cpu_family: document.getElementById('cpu-family').value,
                 cpu_model: document.getElementById('cpu-model').value.trim().toLowerCase(),
+                min_cpu_benchmark: parseInt(document.getElementById('min-cpu-benchmark').value) || 0,
                 min_ram: parseInt(document.getElementById('min-ram').value) || 0,
                 max_price: parseFloat(document.getElementById('max-price').value) || null,
                 disk_type: document.getElementById('disk-type').value,
@@ -1523,6 +1544,10 @@
 
                 // CPU model filter (case-insensitive substring match)
                 if (filters.cpu_model && !listing.cpu_model.toLowerCase().includes(filters.cpu_model)) return false;
+
+                // CPU benchmark filter (PassMark multi-thread CPU Mark)
+                if (filters.min_cpu_benchmark > 0 &&
+                    (!Number.isFinite(listing.benchmark_multi) || listing.benchmark_multi < filters.min_cpu_benchmark)) return false;
 
                 // RAM filter
                 if (listing.ram_gb < filters.min_ram) return false;
@@ -1838,7 +1863,7 @@
 
         // Event listeners for manual filter changes
         const filterInputs = [
-            'cpu-family', 'cpu-model', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'min-uplink', 'ecc-memory', 'benchmark-matched-only'
+            'cpu-family', 'cpu-model', 'min-cpu-benchmark', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'min-uplink', 'ecc-memory', 'benchmark-matched-only'
         ];
 
         filterInputs.forEach(id => {
