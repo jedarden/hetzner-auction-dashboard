@@ -88,6 +88,12 @@ spec:
             echo "Copying web/ directory to artifacts location..."
             cp -r web/ /tmp/web-artifacts/
 
+            # A Pages deployment replaces the whole site. Preserve the live
+            # pipeline artifacts so a web-only deploy cannot erase history.
+            for artifact in current_snapshot.parquet config_history.parquet listing_history.parquet unmatched-cpus.json; do
+              wget -q "https://hetzner-auction-dashboard.pages.dev/${artifact}" -O "/tmp/web-artifacts/${artifact}" || rm -f "/tmp/web-artifacts/${artifact}"
+            done
+
             echo "Web artifacts prepared successfully"
             ls -la /tmp/web-artifacts/
 

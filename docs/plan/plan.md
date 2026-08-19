@@ -409,6 +409,15 @@ Not covered by `config_history.parquet` above — that structure deliberately dr
 
 If these get built, they need their own storage decision — most likely a genuine per-tick or per-day time-indexed structure (not a reuse of `config_history.parquet`'s histogram, which has no time axis to query against). Revisit when actually scoped rather than inheriting a design built for a different question.
 
+**Implemented 2026-08-19: offer lifecycle history.** `listing_history.parquet`
+stores one compact row per continuously observed offer rather than one row per
+poll. It records first/last seen timestamps, observation count, first/lowest/
+last price, and whether the offer remains active. Missing offers are described
+as "expired" or "no longer observed"—the feed cannot distinguish a sale from
+a withdrawal. Rows remain for 180 days by default. Since Hetzner may reuse an
+ID, lifecycle identity includes listing ID, configuration signature, and the
+first-seen timestamp; a reappearance after expiry creates a new lifecycle.
+
 ### Other candidates
 
 - Performance-normalized alerting ("notify when €/PassMark drops below X") — depends on the historical-stats work above.
