@@ -30,6 +30,12 @@ from pipeline.history_store import (
     update_history,
     write_history,
 )
+from pipeline.listing_history_store import (
+    ListingHistoryFetchError,
+    fetch_listing_history,
+    update_listing_history,
+    write_listing_history,
+)
 from pipeline.parquet_writer import write_listings_to_parquet
 from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
@@ -61,6 +67,8 @@ WEB_CACHE_DIR = Path(os.environ.get("WEB_CACHE_DIR", "/tmp/web-cache"))
 # deployment each cycle before being updated and rewritten, same pattern as
 # web_fetcher.py's per-cycle web/ refresh.
 CONFIG_HISTORY_KEY = os.environ.get("CONFIG_HISTORY_KEY", "config_history.parquet")
+LISTING_HISTORY_KEY = os.environ.get("LISTING_HISTORY_KEY", "listing_history.parquet")
+LISTING_HISTORY_RETENTION_DAYS = int(os.environ.get("LISTING_HISTORY_RETENTION_DAYS", "180"))
 CONFIG_HISTORY_BASE_URL = os.environ.get(
     "CONFIG_HISTORY_BASE_URL", "https://hetzner-auction-dashboard.pages.dev"
 )
@@ -104,15 +112,22 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     compute_percentiles(history, enriched)
     logger.info(f"Config history now tracks {len(history)} distinct configurations")
 
+    listing_history_url = f"{CONFIG_HISTORY_BASE_URL}/{LISTING_HISTORY_KEY}"
+    listing_history = await fetch_listing_history(listing_history_url)
+    update_listing_history(listing_history, enriched, now, LISTING_HISTORY_RETENTION_DAYS)
+    logger.info(f"Listing history now tracks {len(listing_history)} offer lifecycles")
+
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:
         deploy_dir = Path(tmpdir)
         parquet_path = deploy_dir / PARQUET_SNAPSHOT_KEY
         json_path = deploy_dir / UNMATCHED_REPORT_KEY
         history_path = deploy_dir / CONFIG_HISTORY_KEY
+        listing_history_path = deploy_dir / LISTING_HISTORY_KEY
 
         write_listings_to_parquet(enriched, parquet_path)
         reporter.generate_report(json_path)
         write_history(history, history_path)
+        write_listing_history(listing_history, listing_history_path)
 
         # Fetch latest web/ content from GitHub (per-cycle refresh)
         try:
@@ -153,6 +168,8 @@ async def main_loop() -> None:
             # Same handling as a feed failure -- see HistoryFetchError's
             # docstring for why this must NOT fall back to an empty history.
             logger.error(f"Config-history fetch-back failed, keeping last published snapshot: {e}")
+        except ListingHistoryFetchError as e:
+            logger.error(f"Listing-history fetch-back failed, keeping last published snapshot: {e}")
         except PagesPublisherError as e:
             logger.error(f"Publish failed, live deployment untouched: {e}")
         except Exception:

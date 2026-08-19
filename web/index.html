@@ -286,6 +286,11 @@
             background: #5a6268;
         }
 
+        .inactive-listing {
+            opacity: 0.68;
+            background: #f8f9fa;
+        }
+
         /* Results Section */
         .results {
             background: white;
@@ -824,6 +829,14 @@
                         <label for="benchmark-matched-only">Benchmark matched only</label>
                     </div>
                 </div>
+                <div class="filter-group">
+                    <label for="listing-status">Offer status</label>
+                    <select id="listing-status">
+                        <option value="active">Active deals</option>
+                        <option value="inactive">Expired deals</option>
+                        <option value="all">All deals</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Primary Sort Axis Selector -->
@@ -1088,6 +1101,9 @@
             const minRam = document.getElementById('min-ram').value;
             if (minRam && parseInt(minRam) > 0) params.set('min_ram', minRam);
 
+            const listingStatus = document.getElementById('listing-status').value;
+            if (listingStatus !== 'active') params.set('status', listingStatus);
+
             const maxPrice = document.getElementById('max-price').value;
             if (maxPrice) params.set('max_price', maxPrice);
 
@@ -1283,6 +1299,10 @@
                     document.getElementById('benchmark-matched-only').checked = params.get('benchmark_matched_only') === 'true';
                 }
 
+                if (params.has('status')) {
+                    document.getElementById('listing-status').value = params.get('status');
+                }
+
                 // Apply filtering and sorting
                 filterAndSortListings();
 
@@ -1470,6 +1490,7 @@
             document.getElementById('min-uplink').value = 0;
             document.getElementById('ecc-memory').checked = false;
             document.getElementById('benchmark-matched-only').checked = false;
+            document.getElementById('listing-status').value = 'active';
             document.getElementById('sort-axis').value = 'auto';
 
             // Reset to default sort
@@ -1529,11 +1550,14 @@
                 location: document.getElementById('location').value,
                 min_uplink: parseInt(document.getElementById('min-uplink').value) || 0,
                 ecc_memory_only: document.getElementById('ecc-memory').checked,
-                benchmark_matched_only: document.getElementById('benchmark-matched-only').checked
+                benchmark_matched_only: document.getElementById('benchmark-matched-only').checked,
+                listing_status: document.getElementById('listing-status').value
             };
 
             // Filter listings
             let filtered = listings.filter(listing => {
+                if (filters.listing_status === 'active' && !listing.active) return false;
+                if (filters.listing_status === 'inactive' && listing.active) return false;
                 // CPU family filter
                 if (filters.cpu_family) {
                     const cpuLower = listing.cpu_model.toLowerCase();
@@ -1714,9 +1738,10 @@
                     : 'No history recorded yet for this configuration';
 
                 return `
-                    <tr>
+                    <tr class="${listing.active ? '' : 'inactive-listing'}">
                         <td class="cpu-cell">
-                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}</div>
+                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}${listing.active ? '' : '<span class="unscored-badge">Expired</span>'}</div>
+                            ${listing.active ? '' : `<div class="cpu-sub">Last seen ${formatRelativeTime(listing.last_seen_at)}</div>`}
                             ${cloudSub}
                         </td>
                         <td class="numeric col-cores">${listing.cpu_cores ?? 'N/A'}/${listing.cpu_threads ?? 'N/A'}</td>
@@ -1732,7 +1757,7 @@
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
                         <td class="numeric ${historyClass}" title="${historyTitle}">${historyText}${atlBadge}${historyFallbackNote}</td>
-                        <td><a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a></td>
+                        <td>${listing.active ? '<a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a>' : ''}</td>
                     </tr>
                 `;
             }).join('');
@@ -1747,6 +1772,14 @@
                 ash: 'Ashburn, VA'
             };
             return labels[location] || location.toUpperCase();
+        }
+
+        function formatRelativeTime(value) {
+            if (!value) return 'recently';
+            const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+            if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            return `${Math.floor(seconds / 86400)}d ago`;
         }
 
         // Update sort label
@@ -1863,7 +1896,7 @@
 
         // Event listeners for manual filter changes
         const filterInputs = [
-            'cpu-family', 'cpu-model', 'min-cpu-benchmark', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'min-uplink', 'ecc-memory', 'benchmark-matched-only'
+            'cpu-family', 'cpu-model', 'min-cpu-benchmark', 'min-ram', 'max-price', 'disk-type', 'min-disk', 'location', 'min-uplink', 'ecc-memory', 'benchmark-matched-only', 'listing-status'
         ];
 
         filterInputs.forEach(id => {
@@ -2363,12 +2396,28 @@
                 // Absolute URL: this runs inside a Worker created from a
                 // blob: URL, so a bare relative path would resolve against
                 // the worker's own base URL, not this page's origin.
-                const parquetUrl = `${location.origin}/current_snapshot.parquet`;
+                const parquetUrl = `${location.origin}/listing_history.parquet`;
 
-                await db.query(`
-                    CREATE TABLE listings AS
-                    SELECT * FROM '${parquetUrl}'
-                `);
+                try {
+                    await db.query(`
+                        CREATE TABLE listings AS
+                        SELECT * FROM '${parquetUrl}'
+                    `);
+                } catch (historyError) {
+                    // During the first rollout the lifecycle artifact does
+                    // not exist until the upgraded pipeline completes a
+                    // cycle. Keep active inventory usable in that window.
+                    console.warn('Listing history unavailable; falling back to active snapshot', historyError);
+                    const snapshotUrl = `${location.origin}/current_snapshot.parquet`;
+                    await db.query(`
+                        CREATE TABLE listings AS
+                        SELECT *, true AS active, fetched_at AS first_seen_at,
+                               fetched_at AS last_seen_at, NULL::VARCHAR AS inactive_at,
+                               1 AS observation_count,
+                               price_effective_monthly AS lowest_price_effective_monthly
+                        FROM '${snapshotUrl}'
+                    `);
+                }
 
                 console.log('Parquet data loaded successfully');
 
@@ -2393,7 +2442,13 @@
                 }
 
                 // Step 6: Convert DuckDB results to our listing format
-                const listingsResult = await db.query('SELECT * FROM listings LIMIT 1000'); // Limit for performance
+                // Keep active inventory ahead of retained history if the
+                // bounded lifecycle table eventually exceeds the UI cap.
+                const listingsResult = await db.query(`
+                    SELECT * FROM listings
+                    ORDER BY active DESC, last_seen_at DESC
+                    LIMIT 5000
+                `);
                 realListings = convertDuckDBResultToListings(listingsResult);
 
                 console.log(`Converted ${realListings.length} listings to internal format`);
@@ -2482,6 +2537,13 @@
                 is_all_time_low: row.is_all_time_low || false,
                 history_sample_size: row.history_sample_size || 0,
                 history_cohort_fallback: row.history_cohort_fallback || false,
+                active: row.active !== false,
+                first_seen_at: row.first_seen_at || null,
+                last_seen_at: row.last_seen_at || null,
+                inactive_at: row.inactive_at || null,
+                observation_count: row.observation_count || 0,
+                lowest_price_effective_monthly: row.lowest_price_effective_monthly != null
+                    ? row.lowest_price_effective_monthly / 100 : null,
                 location: row.location || 'unknown',
                 uplink_speed: row.uplink_speed || 0,
                 ecc_memory: row.ram_ecc || false

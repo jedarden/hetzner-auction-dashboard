@@ -17,6 +17,7 @@ import pyarrow.parquet as pq
 from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
 from pipeline.cpu_matcher import BenchmarkMatch
 from pipeline.history_store import write_history
+from pipeline.listing_history_store import update_listing_history, write_listing_history
 from pipeline.parquet_writer import write_listings_to_parquet
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
 
@@ -220,7 +221,7 @@ class TestWranglerDeploy:
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         cmd = call_args[0][0]
-        assert "wrangler" in cmd
+        assert "wrangler@latest" in cmd
         assert "pages" in cmd
         assert "deploy" in cmd
         assert "--project-name=test-project" in cmd
@@ -291,10 +292,16 @@ class TestPublish:
             parquet_path = deploy_dir / "current_snapshot.parquet"
             json_path = deploy_dir / "unmatched-cpus.json"
             history_path = deploy_dir / "config_history.parquet"
+            listing_history_path = deploy_dir / "listing_history.parquet"
 
             write_listings_to_parquet([listing], parquet_path)
             reporter.generate_report(json_path)
             write_history(_make_sample_history(), history_path)
+            listing_history = {}
+            listing.config_signature = "test-sig"
+            from datetime import UTC, datetime
+            update_listing_history(listing_history, [listing], datetime.now(UTC))
+            write_listing_history(listing_history, listing_history_path)
 
             publisher = PagesPublisher(directory=deploy_dir)
             result = publisher.publish()
@@ -303,6 +310,7 @@ class TestPublish:
             assert result["parquet_size"] > 0
             assert result["json_size"] > 0
             assert result["history_size"] > 0
+            assert result["listing_history_size"] > 0
             assert "deployment_info" in result
 
     def test_publish_missing_parquet_raises_error(self):
@@ -406,6 +414,12 @@ class TestPublish:
 
             history_path = deploy_dir / "config_history.parquet"
             write_history(_make_sample_history(), history_path)
+
+            listing_history = {}
+            listing.config_signature = "test-sig"
+            from datetime import UTC, datetime
+            update_listing_history(listing_history, [listing], datetime.now(UTC))
+            write_listing_history(listing_history, deploy_dir / "listing_history.parquet")
 
             publisher = PagesPublisher(directory=deploy_dir)
 

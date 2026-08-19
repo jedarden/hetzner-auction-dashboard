@@ -6,6 +6,9 @@
 /unmatched-cpus.json
   Cache-Control: public, max-age=60
 
+/listing_history.parquet
+  Cache-Control: public, max-age=60
+
 # HTML shell: this file previously never applied at all (web_fetcher.py
 # nested web/'s contents under a web/ subdirectory, so Cloudflare Pages
 # never read _headers from the deploy root) -- index.html fell back to

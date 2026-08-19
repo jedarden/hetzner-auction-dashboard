@@ -95,6 +95,10 @@ class PagesPublisher:
         self._verify_parquet(history_path)
         logger.info(f"Verified config_history.parquet ({history_path.stat().st_size} bytes)")
 
+        listing_history_path = self.directory / "listing_history.parquet"
+        self._verify_parquet(listing_history_path)
+        logger.info(f"Verified listing_history.parquet ({listing_history_path.stat().st_size} bytes)")
+
         # Deploy via wrangler
         deployment_info = self._wrangler_deploy()
 
@@ -103,6 +107,7 @@ class PagesPublisher:
             "parquet_size": parquet_path.stat().st_size,
             "json_size": json_path.stat().st_size,
             "history_size": history_path.stat().st_size,
+            "listing_history_size": listing_history_path.stat().st_size,
             "deployment_info": deployment_info,
         }
 
