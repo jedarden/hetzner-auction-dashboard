@@ -286,9 +286,22 @@
             background: #5a6268;
         }
 
+        /* Deliberately NOT the near-white #f8f9fa used by hover/header --
+           at rest that read as almost indistinguishable from an active
+           row. Border + distinct gray + muted (not dimmed) text give three
+           independent signals instead of relying on a single low-contrast
+           opacity fade. */
         .inactive-listing {
-            opacity: 0.68;
-            background: #f8f9fa;
+            background: #eaecef;
+            border-left: 3px solid #adb5bd;
+        }
+
+        .inactive-listing:hover {
+            background: #e2e5e9;
+        }
+
+        .inactive-listing .cpu-name {
+            color: #495057;
         }
 
         /* Results Section */
@@ -500,6 +513,13 @@
             font-size: 1rem;
         }
 
+        /* A historical price kept the same bold "live price" blue as an
+           active listing -- the single strongest visual weight in the row
+           was telling you it's buyable right now when it isn't. */
+        .results-table .price-cell.price-historical {
+            color: #868e96;
+        }
+
         .results-table .metric-good {
             color: #2f9e44;
             font-weight: 600;
@@ -531,6 +551,32 @@
             font-size: 0.75rem;
             font-weight: 600;
             margin-left: 10px;
+        }
+
+        /* Distinct hue from .unscored-badge on purpose -- blue already means
+           "unscored CPU" elsewhere in this table, so reusing it for offer
+           status made two unrelated meanings look identical. Slate/gray
+           reads as neutral status, not a warning or a data-quality flag. */
+        .previously-seen-badge {
+            display: inline-block;
+            background: #dee2e6;
+            color: #495057;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .status-chip-delisted {
+            display: inline-block;
+            background: #dee2e6;
+            color: #495057;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            white-space: nowrap;
         }
 
         .atl-badge {
@@ -1765,7 +1811,7 @@
                 return `
                     <tr class="${listing.active ? '' : 'inactive-listing'}">
                         <td class="cpu-cell">
-                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}${listing.active ? '' : '<span class="unscored-badge">Previously seen</span>'}</div>
+                            <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}${listing.active ? '' : '<span class="previously-seen-badge">Previously seen</span>'}</div>
                             ${listing.active ? '' : `<div class="cpu-sub">Last seen ${formatRelativeTime(listing.last_seen_at)}</div>`}
                             ${cloudSub}
                         </td>
@@ -1776,13 +1822,13 @@
                         <td class="disk-cell">${formatDiskConfig(listing)}</td>
                         <td>${getLocationLabel(listing.location)}</td>
                         <td class="numeric" title="${listing.uplink_speed ? listing.uplink_speed + ' Mbit/s' : ''}">${listing.uplink_speed ? listing.uplink_speed + 'M' : 'N/A'}</td>
-                        <td class="numeric price-cell" title="${listing.active ? `Server €${listing.price_base.toFixed(2)} + primary IPv4 €${listing.price_ipv4_monthly.toFixed(2)}; excludes VAT` : 'Lowest effective monthly price observed for this unavailable configuration'}">€${listing.price_effective_monthly.toFixed(2)}${listing.active && listing.price_setup_fee > 0 ? `<div class="cpu-sub">€${listing.price_first_month.toFixed(2)} first month incl. setup</div>` : listing.active ? '' : '<div class="cpu-sub">historical low</div>'}</td>
+                        <td class="numeric price-cell ${listing.active ? '' : 'price-historical'}" title="${listing.active ? `Server €${listing.price_base.toFixed(2)} + primary IPv4 €${listing.price_ipv4_monthly.toFixed(2)}; excludes VAT` : 'Lowest effective monthly price observed for this unavailable configuration'}">€${listing.price_effective_monthly.toFixed(2)}${listing.active && listing.price_setup_fee > 0 ? `<div class="cpu-sub">€${listing.price_first_month.toFixed(2)} first month incl. setup</div>` : listing.active ? '' : '<div class="cpu-sub">historical low</div>'}</td>
                         <td class="numeric ${benchmarkMultiClass}">${listing.price_per_benchmark_point_multi !== null ? listing.price_per_benchmark_point_multi.toFixed(5) : 'N/A'}</td>
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
                         <td class="numeric ${historyClass}" title="${historyTitle}">${historyText}${atlBadge}${historyFallbackNote}</td>
-                        <td>${listing.active ? '<a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a>' : ''}</td>
+                        <td>${listing.active ? '<a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a>' : '<span class="status-chip-delisted" title="No longer offered in this exact configuration as of the last poll">Not offered now</span>'}</td>
                     </tr>
                 `;
             }).join('');
