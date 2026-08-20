@@ -1203,7 +1203,8 @@
                               params.has('min_cpu_benchmark') ||
                               params.has('ecc_memory') ||
                               params.has('benchmark_matched_only') ||
-                              params.has('best_deal');
+                              params.has('best_deal') ||
+                              params.has('status');
 
             if (!hasFilters) {
                 return false; // No filters to restore
