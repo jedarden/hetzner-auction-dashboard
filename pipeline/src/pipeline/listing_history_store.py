@@ -105,7 +105,46 @@ async def fetch_listing_history(url: str, timeout: float = 30.0) -> dict[str, Li
     return {row["listing_instance_id"]: ListingLifecycle(row) for row in table.to_pylist()}
 
 
-def update_listing_history(history, listings, now: datetime, retention_days: int = 180):
+def _rematch_unmatched_history(history, cpu_matcher) -> None:
+    """
+    Re-attempt CPU matching for history rows still carrying
+    benchmark_matched=False from a prior cycle.
+
+    A row's benchmark fields are otherwise frozen once written (see
+    update_listing_history's active-transition loop, which only ever
+    touches `active`/`inactive_at` for rows no longer in the current
+    fetch) -- so a benchmark-map fix landing after a CPU has gone
+    inactive would otherwise never reach it. This makes that self-healing:
+    every cycle, retry the match for anything still unmatched against
+    whatever reference/alias/override data is loaded *now*.
+    """
+    if cpu_matcher is None:
+        return
+    for item in history.values():
+        row = item.row
+        if row["benchmark_matched"]:
+            continue
+        match = cpu_matcher.match_cpu(row["cpu_raw"])
+        if not match.matched:
+            continue
+        row["cpu_normalized"] = match.cpu_normalized
+        row["benchmark_matched"] = True
+        row["passmark_id"] = match.passmark_id
+        row["single_thread_score"] = match.single_thread_score
+        row["multi_thread_score"] = match.multi_thread_score
+        row["cpu_cores"] = match.cores
+        row["cpu_threads"] = match.threads
+        row["benchmark_match_method"] = match.match_method
+        price = row["price_effective_monthly"]
+        row["price_per_benchmark_point_single"] = (
+            price / match.single_thread_score if match.single_thread_score else None
+        )
+        row["price_per_benchmark_point_multi"] = (
+            price / match.multi_thread_score if match.multi_thread_score else None
+        )
+
+
+def update_listing_history(history, listings, now: datetime, retention_days: int = 180, cpu_matcher=None):
     now = now.astimezone(UTC)
     now_iso = now.isoformat()
     active_by_identity = {
@@ -162,6 +201,8 @@ def update_listing_history(history, listings, now: datetime, retention_days: int
                if not item.row["active"] and datetime.fromisoformat(item.row["inactive_at"]) < cutoff]
     for key in expired:
         del history[key]
+
+    _rematch_unmatched_history(history, cpu_matcher)
     return history
 
 
