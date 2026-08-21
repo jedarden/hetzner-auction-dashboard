@@ -114,7 +114,9 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
 
     listing_history_url = f"{CONFIG_HISTORY_BASE_URL}/{LISTING_HISTORY_KEY}"
     listing_history = await fetch_listing_history(listing_history_url)
-    update_listing_history(listing_history, enriched, now, LISTING_HISTORY_RETENTION_DAYS)
+    update_listing_history(
+        listing_history, enriched, now, LISTING_HISTORY_RETENTION_DAYS, cpu_matcher=cpu_matcher
+    )
     logger.info(f"Listing history now tracks {len(listing_history)} offer lifecycles")
 
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:
