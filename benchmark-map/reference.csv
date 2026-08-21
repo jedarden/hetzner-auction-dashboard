@@ -112,3 +112,4 @@ passmark_id,cpu_model,single_thread_score,multi_thread_score,cores,threads
 1,Intel Core i7-2600,1730,5317,4,8
 1205,Intel Xeon E3-1275,1774,5487,4,8
 902,Intel Core i7-3930K,1737,8183,6,12
+3880,AMD EPYC 7502,2098,51871,32,64

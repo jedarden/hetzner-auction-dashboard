@@ -235,6 +235,32 @@ class TestCpuMatchingFixtures:
             assert result.passmark_id != epyc_7402_passmark_id, \
                 f"EPYC 7452 must NEVER match EPYC 7402 PassMark ID (RISK R1 DEFENSE)"
 
+    def test_near_miss_adversarial_epyc_7502_variants(self, cpu_matcher):
+        """Test near-miss adversarial pair: AMD EPYC 7502 (dual-socket) vs 7502P (single-socket)."""
+        epyc_7502_variants = ["AMD EPYC 7502", "EPYC 7502"]
+        # Note: bare "EPYC 7502P" (no AMD prefix) has no alias entry and does
+        # not match anything -- pre-existing gap, out of scope here.
+        epyc_7502p_variants = ["AMD EPYC 7502P"]
+
+        epyc_7502_passmark_id = 3880
+        epyc_7502p_passmark_id = 3538
+
+        for variant in epyc_7502_variants:
+            result = cpu_matcher.match_cpu(variant)
+            assert result.matched, f"EPYC 7502 variant '{variant}' should match"
+            assert result.passmark_id == epyc_7502_passmark_id, \
+                f"EPYC 7502 variant should match correct PassMark ID"
+            assert result.passmark_id != epyc_7502p_passmark_id, \
+                f"EPYC 7502 must NEVER match EPYC 7502P PassMark ID (RISK R1 DEFENSE)"
+
+        for variant in epyc_7502p_variants:
+            result = cpu_matcher.match_cpu(variant)
+            assert result.matched, f"EPYC 7502P variant '{variant}' should match"
+            assert result.passmark_id == epyc_7502p_passmark_id, \
+                f"EPYC 7502P variant should match correct PassMark ID"
+            assert result.passmark_id != epyc_7502_passmark_id, \
+                f"EPYC 7502P must NEVER match EPYC 7502 PassMark ID (RISK R1 DEFENSE)"
+
     def test_near_miss_adversarial_ryzen_models(self, cpu_matcher):
         """Test near-miss adversarial pairs: Ryzen 9 7900X vs 7950X."""
         ryzen_7950x_variants = ["AMD Ryzen 9 7950X", "Ryzen 9 7950X"]
