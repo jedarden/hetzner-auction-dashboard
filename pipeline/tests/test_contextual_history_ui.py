@@ -21,3 +21,15 @@ def test_contextual_history_selection_collapses_and_suppresses():
     script = f"{match.group(0)}; console.log(JSON.stringify(selectContextualListings({json.dumps(listings)}, 'context').map(x => x.id)));"
     result = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == ["active-a", "old-b-low"]
+
+
+def test_last_seen_is_a_sortable_table_column():
+    html = (Path(__file__).parents[2] / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert '<option value="last_seen_at">Last Seen</option>' in html
+    assert 'data-sort="last_seen_at"' in html
+    assert 'data-indicator="last_seen_at"' in html
+    assert "case 'last_seen_at':" in html
+    assert "field === 'last_seen_at' ? 'desc' : 'asc'" in html
+    assert "e.target.value === 'last_seen_at' ? 'desc' : 'asc'" in html
+    assert "formatSeenAt(listing.last_seen_at)" in html
