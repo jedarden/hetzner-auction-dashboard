@@ -62,3 +62,30 @@ def test_manifest_is_written_after_verified_generation(mock_client, monkeypatch,
     assert body == manifest
     assert body["dataset_hash"] == "abc"
     assert all(path.startswith("generations/20260822T183100Z/") for path in body["files"].values())
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_storage_prefix_is_hidden_from_public_manifest(mock_client, monkeypatch, tmp_path):
+    for name, value in {
+        "GARAGE_S3_ENDPOINT": "https://s3.example",
+        "GARAGE_ACCESS_KEY_ID": "key",
+        "GARAGE_SECRET_ACCESS_KEY": "secret",
+        "GARAGE_BUCKET": "shared-bucket",
+        "GARAGE_KEY_PREFIX": "hetzner-auction-data/",
+        "GARAGE_PUBLIC_BASE_URL": "https://data.example",
+    }.items():
+        monkeypatch.setenv(name, value)
+    s3 = MagicMock()
+    s3.head_object.side_effect = lambda **kw: {
+        "ContentLength": (tmp_path / Path(kw["Key"]).name).stat().st_size
+    }
+    mock_client.return_value = s3
+    for name in ("current_snapshot.parquet", "config_history.parquet", "listing_history.parquet"):
+        pq.write_table(pa.table({"id": [1]}), tmp_path / name)
+    (tmp_path / "unmatched-cpus.json").write_text("{}", encoding="utf-8")
+
+    manifest = GaragePublisher().publish(tmp_path, "abc", datetime(2026, 8, 22, 18, 31, tzinfo=UTC))
+
+    assert all(call.args[2].startswith("hetzner-auction-data/generations/") for call in s3.upload_file.call_args_list)
+    assert s3.put_object.call_args.kwargs["Key"] == "hetzner-auction-data/manifest.json"
+    assert all(path.startswith("generations/") for path in manifest["files"].values())

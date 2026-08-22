@@ -65,6 +65,7 @@ class GaragePublisher:
             raise GaragePublisherError(f"Missing Garage configuration: {', '.join(missing)}")
         self.bucket = required["GARAGE_BUCKET"]
         self.public_base_url = required["GARAGE_PUBLIC_BASE_URL"].rstrip("/")
+        self.key_prefix = os.getenv("GARAGE_KEY_PREFIX", "").strip("/")
         self.s3 = boto3.client(
             "s3",
             endpoint_url=required["GARAGE_S3_ENDPOINT"],
@@ -76,7 +77,7 @@ class GaragePublisher:
 
     def get_manifest(self) -> dict[str, Any] | None:
         try:
-            response = self.s3.get_object(Bucket=self.bucket, Key="manifest.json")
+            response = self.s3.get_object(Bucket=self.bucket, Key=self._storage_key("manifest.json"))
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code")
             if code in {"NoSuchKey", "NoSuchBucket", "404"}:
@@ -108,7 +109,8 @@ class GaragePublisher:
         for filename in ARTIFACTS:
             path = directory / filename
             self._verify(path)
-            key = f"{prefix}/{filename}"
+            relative_key = f"{prefix}/{filename}"
+            key = self._storage_key(relative_key)
             content_type = "application/json" if filename.endswith(".json") else "application/vnd.apache.parquet"
             self.s3.upload_file(
                 str(path), self.bucket, key,
@@ -117,7 +119,7 @@ class GaragePublisher:
             head = self.s3.head_object(Bucket=self.bucket, Key=key)
             if head.get("ContentLength") != path.stat().st_size:
                 raise GaragePublisherError(f"Remote verification failed for {filename}")
-            files[filename] = key
+            files[filename] = relative_key
 
         manifest = {
             "schema_version": 1,
@@ -129,13 +131,16 @@ class GaragePublisher:
         body = json.dumps(manifest, sort_keys=True, indent=2).encode()
         self.s3.put_object(
             Bucket=self.bucket,
-            Key="manifest.json",
+            Key=self._storage_key("manifest.json"),
             Body=body,
             ContentType="application/json",
             CacheControl="no-cache, max-age=0, must-revalidate",
         )
         logger.info("Published Garage generation %s", generation)
         return manifest
+
+    def _storage_key(self, relative_key: str) -> str:
+        return f"{self.key_prefix}/{relative_key}" if self.key_prefix else relative_key
 
     @staticmethod
     def _verify(path: Path) -> None:
