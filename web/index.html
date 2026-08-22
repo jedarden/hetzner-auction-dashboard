@@ -894,6 +894,7 @@
                     <option value="price_per_benchmark_point_single">Benchmark Value (single-thread)</option>
                     <option value="price_per_gb_ram">Value per GB RAM</option>
                     <option value="price_per_tb_disk">Value per TB Disk</option>
+                    <option value="last_seen_at">Last Seen</option>
                 </select>
             </div>
             <div class="sort-description" id="sort-description">
@@ -948,6 +949,7 @@
                                 <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_tb_disk">€/TB Disk <span class="sort-indicator" data-indicator="price_per_tb_disk"></span></th>
                                 <th class="sortable numeric" data-sort="price_percentile_vs_history" title="Cheaper-than-history rank for this exact CPU+RAM+disk+datacenter config (or the broader CPU model when too little history exists yet)">History <span class="sort-indicator" data-indicator="price_percentile_vs_history"></span></th>
+                                <th class="sortable" data-sort="last_seen_at">Last seen <span class="sort-indicator" data-indicator="last_seen_at"></span></th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -1739,6 +1741,9 @@
                     case 'cpu_model':
                         comparison = a.cpu_model.localeCompare(b.cpu_model);
                         break;
+                    case 'last_seen_at':
+                        comparison = (Date.parse(a.last_seen_at) || 0) - (Date.parse(b.last_seen_at) || 0);
+                        break;
                     case 'price_effective_monthly':
                     default:
                         comparison = a.price_effective_monthly - b.price_effective_monthly;
@@ -1813,7 +1818,6 @@
                     <tr class="${listing.active ? '' : 'inactive-listing'}">
                         <td class="cpu-cell">
                             <div class="cpu-name">${listing.cpu_model} ${unscoredBadge}${listing.active ? '' : '<span class="previously-seen-badge">Previously seen</span>'}</div>
-                            ${listing.active ? '' : `<div class="cpu-sub">Last seen ${formatRelativeTime(listing.last_seen_at)}</div>`}
                             ${cloudSub}
                         </td>
                         <td class="numeric col-cores">${listing.cpu_cores ?? 'N/A'}/${listing.cpu_threads ?? 'N/A'}</td>
@@ -1829,6 +1833,7 @@
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
                         <td class="numeric ${historyClass}" title="${historyTitle}">${historyText}${atlBadge}${historyFallbackNote}</td>
+                        <td title="${listing.last_seen_at || ''}">${formatSeenAt(listing.last_seen_at)}</td>
                         <td>${listing.active ? '<a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a>' : '<span class="status-chip-delisted" title="No longer offered in this exact configuration as of the last poll">Not offered now</span>'}</td>
                     </tr>
                 `;
@@ -1846,12 +1851,17 @@
             return labels[location] || location.toUpperCase();
         }
 
-        function formatRelativeTime(value) {
-            if (!value) return 'recently';
-            const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
-            if (seconds < 3600) return `${Math.max(1, Math.floor(seconds / 60))}m ago`;
-            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-            return `${Math.floor(seconds / 86400)}d ago`;
+        function formatSeenAt(value) {
+            if (!value) return 'Unknown';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'Unknown';
+            return date.toLocaleString([], {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+            });
         }
 
         // Update sort label
@@ -1875,7 +1885,8 @@
                 benchmark_multi: 'Benchmark score (multi-thread)',
                 benchmark_single: 'Benchmark score (single-thread)',
                 cpu_cores: 'CPU cores',
-                price_percentile_vs_history: 'Historical value percentile'
+                price_percentile_vs_history: 'Historical value percentile',
+                last_seen_at: 'Last seen'
             };
             const directionArrow = currentSortDirection === 'asc' ? '↑' : '↓';
             document.getElementById('current-sort').textContent = `${labels[sortBy] || sortBy} ${directionArrow}`;
@@ -2038,7 +2049,7 @@
         // Sort axis selector
         document.getElementById('sort-axis').addEventListener('change', (e) => {
             applySortAxisChange(e.target.value);
-            filterAndSortListings(undefined, 'asc');
+            filterAndSortListings(undefined, e.target.value === 'last_seen_at' ? 'desc' : 'asc');
             // Serialize to URL for bookmarking
             if (!isInitializingFromURL) {
                 serializeFiltersToURL();
@@ -2046,7 +2057,8 @@
         });
 
         // Sortable table column headers: first click on a new column sorts
-        // it ascending; clicking the already-active column again flips
+        // it ascending (except Last seen, which starts newest-first);
+        // clicking the already-active column again flips
         // direction. This drives the exact same userSortAxis/
         // currentSortDirection state as the dropdown above, so both stay
         // in sync and either can be used interchangeably.
@@ -2056,7 +2068,7 @@
                 direction = currentSortDirection === 'asc' ? 'desc' : 'asc';
             } else {
                 applySortAxisChange(field);
-                direction = 'asc';
+                direction = field === 'last_seen_at' ? 'desc' : 'asc';
             }
             const sortAxisSelect = document.getElementById('sort-axis');
             if (sortAxisSelect.querySelector(`option[value="${field}"]`)) {
@@ -2118,7 +2130,8 @@
                 'price_per_benchmark_point_multi': 'Sorts by price per multi-thread benchmark point. Best for most workloads where multi-core performance matters.',
                 'price_per_benchmark_point_single': 'Sorts by price per single-thread benchmark point. Best for latency-sensitive or single-threaded applications.',
                 'price_per_gb_ram': 'Sorts by price per GB of RAM. Best for in-memory caching, databases, or RAM-intensive workloads.',
-                'price_per_tb_disk': 'Sorts by price per TB of disk storage. Best for file servers, backups, or storage-intensive applications.'
+                'price_per_tb_disk': 'Sorts by price per TB of disk storage. Best for file servers, backups, or storage-intensive applications.',
+                'last_seen_at': 'Sorts by when each listing was most recently observed. Use descending order to see the most recently seen listings first.'
             };
             document.getElementById('sort-description').textContent = descriptions[userSortAxis] || descriptions['auto'];
         }
