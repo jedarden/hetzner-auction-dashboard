@@ -1,10 +1,10 @@
 # Hetzner Auction Dashboard Pipeline - Dockerfile
 # Multi-stage build for minimal image size
 #
-# This container runs the continuous 10-minute refresh loop that:
+# This container runs the continuous one-minute refresh loop that:
 # - Fetches Hetzner auction data
 # - Joins with CPU benchmark scores
-# - Publishes Parquet snapshot to R2
+# - Publishes manifest-versioned Parquet generations to Garage
 #
 # Architecture: docs/plan/plan.md "Pipeline Run Lifecycle"
 
@@ -27,12 +27,12 @@ COPY pipeline/pyproject.toml .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Stage 2: Runtime image with Node.js
+# Stage 2: Runtime image
 FROM python:3.11-slim
 
 # Set labels
 LABEL maintainer="jedarden <jedarden@example.com>"
-LABEL description="Hetzner Auction Dashboard Pipeline - 10-minute refresh loop"
+LABEL description="Hetzner Auction Dashboard Pipeline - one-minute Garage publisher"
 LABEL version="0.1.19"
 
 # Set environment variables
@@ -45,24 +45,11 @@ ENV PYTHONUNBUFFERED=1 \
     PIPELINE_LOG_LEVEL=INFO \
     PYTHONPATH=/app/src
 
-# Install runtime dependencies including Node.js, git, and curl (for npx)
+# Install runtime TLS roots only; data publication uses the S3-compatible
+# Garage API and no longer shells out to Node/wrangler.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
-    git \
-    gnupg \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js 22.x using NodeSource setup script
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get install -y --no-install-recommends nodejs && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install wrangler CLI globally for Cloudflare Pages deployment
-RUN npm install -g wrangler
-
-# Verify installations
-RUN node --version && npm --version && git --version && wrangler --version
 
 # Create non-root user for security with home directory
 RUN groupadd -r pipeline && useradd -r -g pipeline -m -d /home/pipeline pipeline
@@ -90,6 +77,6 @@ USER pipeline
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import sys; sys.exit(0)" || exit 1
 
-# Run the pipeline with 10-minute refresh loop
+# Run the pipeline with its configured refresh loop
 # ENTRYPOINT ["python", "-m", "pipeline.main"]
 CMD ["python", "-m", "pipeline.main"]

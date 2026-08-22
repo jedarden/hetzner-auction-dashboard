@@ -33,3 +33,12 @@ def test_last_seen_is_a_sortable_table_column():
     assert "field === 'last_seen_at' ? 'desc' : 'asc'" in html
     assert "e.target.value === 'last_seen_at' ? 'desc' : 'asc'" in html
     assert "formatSeenAt(listing.last_seen_at)" in html
+
+
+def test_client_resolves_manifest_with_pages_migration_fallback():
+    html = (Path(__file__).parents[2] / "web" / "index.html").read_text(encoding="utf-8")
+
+    assert "https://hetzner-data.ardenone.com/manifest.json" in html
+    assert "fetch(DATA_MANIFEST_URL, { cache: 'no-store' })" in html
+    assert "manifest.files['listing_history.parquet']" in html
+    assert "`${location.origin}/listing_history.parquet`" in html

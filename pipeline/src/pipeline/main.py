@@ -1,10 +1,9 @@
 """
 Hetzner Auction Pipeline — entrypoint
 
-Runs the 10-minute refresh loop described in docs/plan/plan.md's "Pipeline Run
-Lifecycle": fetch -> normalize/match -> compute -> write -> publish. Every
-step already implements its own verify-before-publish discipline (see
-pages_publisher.py) — this module's only job is to wire the existing pieces
+Runs the one-minute refresh loop described in docs/architecture.md: fetch ->
+normalize/match -> compute -> write immutable generation -> publish manifest.
+Every step implements verify-before-publish discipline; this module wires the pieces
 together and keep the loop alive across a single run's failure.
 
 Configuration is entirely environment-variable driven (see the ConfigMap /
@@ -37,9 +36,8 @@ from pipeline.listing_history_store import (
     write_listing_history,
 )
 from pipeline.parquet_writer import write_listings_to_parquet
-from pipeline.pages_publisher import PagesPublisher, PagesPublisherError
+from pipeline.garage_publisher import GaragePublisher, GaragePublisherError, dataset_hash
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
-from pipeline.web_fetcher import WebFetcherError, fetch_web_content
 
 logging.basicConfig(
     level=os.environ.get("PIPELINE_LOG_LEVEL", "INFO"),
@@ -47,7 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-REFRESH_INTERVAL_SECONDS = int(os.environ.get("PIPELINE_REFRESH_INTERVAL_SECONDS", "600"))
+REFRESH_INTERVAL_SECONDS = int(os.environ.get("PIPELINE_REFRESH_INTERVAL_SECONDS", "60"))
 
 # The Dockerfile's WORKDIR is /app with `pipeline/src` copied to /app/src and
 # `benchmark-map/` copied to /app/benchmark-map. CpuMatcher's own default
@@ -96,6 +94,12 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     enriched = enrich_listings_batch(raw_listings, cpu_matcher=cpu_matcher)
     logger.info(f"Enriched {len(enriched)} listings")
 
+    publisher = GaragePublisher()
+    digest = dataset_hash(enriched)
+    if not publisher.is_changed(digest):
+        logger.info("Auction dataset unchanged; skipping history rewrite and publication")
+        return
+
     # Fetch-back the currently-live config_history.parquet before folding
     # this cycle's prices into it (v2 historical-value feature). "Nothing
     # published yet" (a 404, or -- the actual case on Cloudflare Pages,
@@ -105,14 +109,14 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     # failure -- abort this cycle, keep the last published snapshot, retry
     # next cycle. See HistoryFetchError's docstring for why that distinction
     # matters.
-    history_url = f"{CONFIG_HISTORY_BASE_URL}/{CONFIG_HISTORY_KEY}"
+    history_url = publisher.active_file_url(CONFIG_HISTORY_KEY) or f"{CONFIG_HISTORY_BASE_URL}/{CONFIG_HISTORY_KEY}"
     history = await fetch_history(history_url)
     now = datetime.now(UTC)
     update_history(history, enriched, now)
     compute_percentiles(history, enriched)
     logger.info(f"Config history now tracks {len(history)} distinct configurations")
 
-    listing_history_url = f"{CONFIG_HISTORY_BASE_URL}/{LISTING_HISTORY_KEY}"
+    listing_history_url = publisher.active_file_url(LISTING_HISTORY_KEY) or f"{CONFIG_HISTORY_BASE_URL}/{LISTING_HISTORY_KEY}"
     listing_history = await fetch_listing_history(listing_history_url)
     update_listing_history(
         listing_history, enriched, now, LISTING_HISTORY_RETENTION_DAYS, cpu_matcher=cpu_matcher
@@ -131,17 +135,7 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
         write_history(history, history_path)
         write_listing_history(listing_history, listing_history_path)
 
-        # Fetch latest web/ content from GitHub (per-cycle refresh)
-        try:
-            web_dir = fetch_web_content(deploy_dir)
-            logger.info(f"Fresh web/ content copied to {web_dir}")
-        except WebFetcherError as e:
-            logger.error(f"Failed to fetch web content, aborting publish: {e}")
-            raise
-
-        # Publish to Cloudflare Pages
-        deploy_publisher = PagesPublisher(directory=deploy_dir)
-        deploy_publisher.publish()
+        publisher.publish(deploy_dir, digest, now)
 
     logger.info(
         f"Cycle complete: published {len(enriched)} listings, "
@@ -172,7 +166,7 @@ async def main_loop() -> None:
             logger.error(f"Config-history fetch-back failed, keeping last published snapshot: {e}")
         except ListingHistoryFetchError as e:
             logger.error(f"Listing-history fetch-back failed, keeping last published snapshot: {e}")
-        except PagesPublisherError as e:
+        except GaragePublisherError as e:
             logger.error(f"Publish failed, live deployment untouched: {e}")
         except Exception:
             logger.exception("Unexpected error in pipeline cycle — keeping last published snapshot")

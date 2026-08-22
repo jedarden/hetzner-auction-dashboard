@@ -2390,6 +2390,31 @@
         // Real DuckDB-WASM and Parquet loading with error handling
         let realListings = []; // Will store loaded data from Parquet
         let db = null; // DuckDB instance
+        const DATA_MANIFEST_URL = 'https://hetzner-data.ardenone.com/manifest.json';
+
+        async function resolveDataFiles() {
+            try {
+                const response = await fetch(DATA_MANIFEST_URL, { cache: 'no-store' });
+                if (!response.ok) throw new Error(`manifest HTTP ${response.status}`);
+                const manifest = await response.json();
+                if (manifest.schema_version !== 1 || !manifest.files) {
+                    throw new Error('unsupported data manifest');
+                }
+                const base = new URL('.', DATA_MANIFEST_URL);
+                return {
+                    listingHistory: new URL(manifest.files['listing_history.parquet'], base).href,
+                    snapshot: new URL(manifest.files['current_snapshot.parquet'], base).href
+                };
+            } catch (error) {
+                // Migration safety: the last Pages-bundled generation remains
+                // usable until the Garage origin and its first manifest exist.
+                console.warn('Garage manifest unavailable; using Pages fallback', error);
+                return {
+                    listingHistory: `${location.origin}/listing_history.parquet`,
+                    snapshot: `${location.origin}/current_snapshot.parquet`
+                };
+            }
+        }
 
         async function loadRealDataWithFallback() {
             showLoadingState('Loading auction data from Parquet files...');
@@ -2481,7 +2506,8 @@
                 // Absolute URL: this runs inside a Worker created from a
                 // blob: URL, so a bare relative path would resolve against
                 // the worker's own base URL, not this page's origin.
-                const parquetUrl = `${location.origin}/listing_history.parquet`;
+                const dataFiles = await resolveDataFiles();
+                const parquetUrl = dataFiles.listingHistory;
 
                 try {
                     await db.query(`
@@ -2493,7 +2519,7 @@
                     // not exist until the upgraded pipeline completes a
                     // cycle. Keep active inventory usable in that window.
                     console.warn('Listing history unavailable; falling back to active snapshot', historyError);
-                    const snapshotUrl = `${location.origin}/current_snapshot.parquet`;
+                    const snapshotUrl = dataFiles.snapshot;
                     await db.query(`
                         CREATE TABLE listings AS
                         SELECT *, true AS active, fetched_at AS first_seen_at,
