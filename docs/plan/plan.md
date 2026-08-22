@@ -1,6 +1,6 @@
 # hetzner-auction-dashboard Plan
 
-_Last updated: 2026-08-12._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it.
+_Last updated: 2026-08-22._ This plan and its companion docs (`docs/research/existing-tools.md`, `docs/notes/benchmark-priority.md`) are living references — if this date and either of those drift more than a few weeks apart, treat the older one as stale and reconcile before trusting it. `docs/architecture.md` is canonical for deployment and publication: its Garage + manifest design supersedes ADR-7's per-cycle Pages deployments. Older ADR-7 references below describe the currently deployed implementation and migration history, not the target architecture.
 
 ## Overview
 
@@ -44,11 +44,11 @@ This project's differentiation, in priority order: **(a)** treat the benchmark j
 - Unscored listings sort to the bottom of the results (NULLS LAST) or are scattered among scored listings instead of grouped at the top
 
 ### Scenario 2: Degraded — Hetzner Feed Unreachable
-**Setup:** A scheduled 10-minute pipeline run starts; Hetzner's auction feed endpoint times out or errors.
+**Setup:** A scheduled one-minute pipeline poll starts; Hetzner's auction feed endpoint times out or errors.
 **Action:** Pipeline attempts its normal fetch → normalize → compute → publish cycle.
-**Expected:** Pipeline aborts before invoking `wrangler pages deploy` (see Pipeline Run Lifecycle); the previously published deployment keeps serving unchanged; the failure is logged.
+**Expected:** Pipeline leaves the Garage manifest unchanged (see Pipeline Run Lifecycle); the previously published generation keeps serving; the failure is logged.
 **Pass criteria:**
-- No new Cloudflare Pages deployment is created for the failed run
+- No new Garage generation becomes active and no Pages deployment is involved
 - Dashboard continues to load and query the last-known-good snapshot
 - Failure is logged with enough detail to diagnose (endpoint, status/error, timestamp)
 **Fail criteria:**
@@ -77,48 +77,48 @@ Two independent halves connected only by a Parquet file:
 
 ### 1. Pipeline (server-side, scheduled)
 
-- Fetches current listings from Hetzner's public Server Auction data feed every **10 minutes**. Hetzner doesn't document a fixed update schedule (price drops happen at randomized intervals by design), so this matches the practical cadence third-party tools converge on — frequent enough to catch price drops and new listings without hammering the endpoint.
+- Fetches current listings from Hetzner's public Server Auction data feed approximately every **1 minute**, with jitter and exponential backoff for 429/5xx responses. This closes the observed blind spot where desirable listings disappear inside one ten-minute tick.
 - Normalizes each listing's free-text CPU name and matches it against a maintained CPU benchmark reference table (see Benchmark Strategy). Matching is fuzzy/alias-based with a manual-override list for CPUs that don't match cleanly — this is the part expected to need ongoing curation, not the dashboard code itself.
 - Computes derived cost fields for every listing: effective total monthly cost (`price_effective_monthly`, folding in the setup fee — see Data Models for the formula), then price per benchmark point — single-thread and multi-thread computed and stored separately, never blended (see ADR-3) — price per GB RAM, and price per TB disk (see Data Models for each formula).
 - Writes ONE denormalized Parquet file — no relational structure, every column a query might filter/sort on is already present.
-- Publishes the Parquet file and `unmatched-cpus.json` by bundling them into the same **Cloudflare Pages** deployment as `web/` and running `wrangler pages deploy` (see ADR-7 — supersedes the original R2-based design in ADR-1). Same-origin serving means no CORS configuration is needed; Cloudflare's CDN already serves HTTP range requests for static assets, so DuckDB-WASM's partial reads work unchanged. Requires a Cloudflare Pages API token (Account: Cloudflare Pages:Edit) stored as a cluster secret (OpenBao/ExternalSecret) — reuses the same already-live token this environment's other Pages deploys use, not a new credential.
-- Runs as a long-lived Deployment with an internal refresh loop (house rule: no Job/CronJob) on a Rackspace Spot cluster, wired through GitOps (`jedarden/declarative-config`, `k8s/` path) — never a live kubectl mutation. The cluster only needs egress to Cloudflare's API; nothing is served from cluster ingress.
+- Publishes changed datasets as immutable generations in Garage and replaces a small `manifest.json` only after every object has been uploaded and verified. A data poll never invokes `wrangler pages deploy`; see `docs/architecture.md`.
+- Runs as a single-replica, long-lived Deployment with an internal refresh loop (house rule: no Job/CronJob), wired through GitOps (`jedarden/declarative-config`, `k8s/` path). Garage is the durable source of truth; no serving PVC is required.
 - **Format verification.** Before the pipeline depends on it in production, the chosen Parquet writer's output is confirmed compatible with DuckDB-WASM's httpfs range-request reads via the conformance test in Testing Strategy — checked once by the end of Phase 3 (see Phase 3 completion criteria and Testing Strategy), not re-verified every run and not deferred to Phase 4 or 5.
 - **Operational visibility.** The pipeline logs the timestamp of its last successful publish, so a stalled pipeline is visible without needing the dashboard open — the same `fetched_at` value the client already surfaces as a staleness indicator, just also checked from the pipeline side.
 
 ### Pipeline Run Lifecycle
 
-**Rewritten 2026-08-06 for ADR-7** — R2's temp-key-then-swap no longer applies; Cloudflare Pages' own atomic deployment promotion replaces it. Every run — the v1 current-snapshot Parquet file and its companion `unmatched-cpus.json` unmatched-CPU report (see Benchmark Strategy) — follows this verify-locally-then-deploy discipline:
+**Rewritten 2026-08-22 for ADR-8.** Every changed dataset follows this verify-then-publish discipline:
 
 1. **Fetch** — pull current listings from Hetzner's auction feed.
 2. **Normalize/match** — clean CPU strings, resolve against `benchmark-map/`, flag unmatched.
 3. **Compute** — derive `price_effective_monthly` first (see Data Models for the setup-fee formula), then `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk` (see Data Models for each formula).
-4. **Write locally, into a fresh copy of `web/`** — write `current_snapshot.parquet` and `unmatched-cpus.json` into a local working copy of the current `web/` static files (not the live site — nothing is public yet at this point). The pipeline keeps its own current copy of `web/` (pulled from the repo; see Implementation Phases for how it stays in sync with code changes) so a data-only deploy always carries the latest code along with it.
-5. **Verify** — confirm both files are structurally sane before `wrangler` ever runs: non-zero size, and parses as valid Parquet (snapshot) or valid JSON (unmatched-CPU report). A verification failure aborts before step 6 — nothing gets deployed.
-6. **Deploy** — run `wrangler pages deploy` against the assembled directory. This is where Cloudflare Pages' own atomicity takes over: the deployment either completes and is promoted to production as a whole, or fails and the previously-promoted deployment keeps serving unchanged — there is no partial-deploy state a visitor can land on either way, same guarantee R2's copy-then-delete-old swap gave, different mechanism providing it.
-7. **On failure at any step** — abort immediately without invoking `wrangler`. The previously deployed snapshot keeps serving untouched; the run is simply retried next cycle.
+4. **Detect change** — stop without publishing when the material dataset is identical to the active generation.
+5. **Write and verify locally** — create a complete immutable generation containing snapshot, lifecycle/config history, and unmatched-CPU outputs; parse every file before upload.
+6. **Upload and verify** — write the generation under a new Garage prefix and confirm the remote objects are complete.
+7. **Commit** — replace `manifest.json` last. This single mutable pointer atomically exposes the complete generation.
+8. **On failure at any step** — leave the prior manifest untouched and retry with backoff or on the next poll.
 
-Cache staleness after a deploy is bounded the same way ADR-4 bounded it for R2 — a short `Cache-Control` on just the two data files, now via a `_headers` file in `web/` rather than a per-object header set at R2 write time (see ADR-7).
-
-v2's percentile/all-time-low feature is implemented (`config_history.parquet` — see "Historical stats: value percentile & all-time-low"): it's fetched back over HTTP and rewritten each cycle, the same fetch-back-before-republish pattern this lifecycle already uses for `web/`, `current_snapshot.parquet`, and `unmatched-cpus.json` — never a read-modify-write of a growing raw log. Velocity/lifetime/market-trend candidates remain deferred to v2 with no storage design yet, since v1 doesn't need them.
+Generation objects use long immutable caching. `manifest.json` uses revalidation/no-cache semantics so clients discover a completed generation without ever mixing files from different cycles.
 
 ### Concurrency Model
 
-The pipeline Deployment **MUST run as a single active writer** (`replicas: 1`). A rolling redeploy could briefly overlap two pods each running the lifecycle above — Cloudflare Pages' deployment promotion is what keeps that safe regardless: whichever pod's `wrangler pages deploy` call is promoted last wins, and a visitor never sees a partial write, only either the previous deployment or a fully-published new one. This is deliberately simpler than a distributed lock — with a 10-minute cadence and deploy-based publishing, a lost overlapping run just means one cycle's data doesn't make it live, never corruption. (Unlike the R2 design, an overlapping run here also means one cycle's *entire deployment* — code included — gets superseded by the other; since both pods would be deploying from the same underlying `web/` code anyway, this has no practical effect beyond the data half.)
+The pipeline Deployment **MUST run as a single active writer** (`replicas: 1`) with a `Recreate` rollout strategy. This prevents overlapping pods from independently reading one history generation and racing to advance the manifest. Immutable generation uploads remain harmless if abandoned; only the manifest selects live data.
 
 ### 2. Client (fully static, browser-only)
 
-- Static site bundling DuckDB-WASM, deployed to **Cloudflare Pages** via an Argo Workflow on iad-ci using `wrangler pages deploy` (Direct Upload) to submit the built artifacts directly — never Cloudflare's own git-integration auto-build. Same deployment pattern as jedarden.com's `website-build` template (see ADR-6).
+- Static site bundling DuckDB-WASM, deployed to **Cloudflare Pages** only when interface code changes. Data polling and publication are independent of this deployment.
 - **Frontend framework: none.** Resolved via idea-gen (2026-08-02, see `docs/notes/ideas-ledger.md`): a single static HTML page with DuckDB-WASM loaded inline/from a CDN, no JS framework — the cheapest answer to the plan's former Open Question. This decides the client's rendering approach only; the pipeline that fetches, joins, and publishes the Parquet data (this section's other bullets) is unchanged and unaffected by this choice — the data still comes from a real backend process, just not a per-request one.
-- Loads the Parquet file over HTTP via DuckDB-WASM's httpfs, pointed at the same-origin `/current_snapshot.parquet` path (bundled into the same Cloudflare Pages deployment as the page itself — see ADR-7), using range requests so only the needed row groups are fetched. Same-origin means no CORS configuration is needed, unlike the original R2-based design.
+- Fetches `manifest.json` without caching from the dedicated public read-only Garage data origin, then loads the immutable Parquet generation named by that manifest using DuckDB-WASM HTTP range requests. The data origin supplies the required CORS and exposed range headers.
 - All search/filter/sort UI translates directly to SQL `WHERE`/`ORDER BY` against the single pre-joined table — no joins, no benchmark lookup, at query time.
 - No backend calls at request time. The only "dynamic" part of the deployed site is that the Parquet file itself changes on the pipeline's refresh cadence.
 - **Agentation** ([github.com/benjitaylor/agentation](https://github.com/benjitaylor/agentation)) mounted in the page — the standing house convention for UI feedback on any repo with a web frontend in this workspace, so annotated feedback (element selectors, positions, notes) can be handed to an agent instead of prose descriptions. Agentation requires React 18+, which would otherwise contradict the framework-free decision above — resolved via ADR-5: an isolated React root mounts *only* the Agentation toolbar (via CDN ESM imports, no npm install or bundler), while the dashboard itself (filters, sorts, DuckDB-WASM queries) stays plain HTML/JS with no build step.
 
 ### Dependency Integration Contracts
 
-- **Hetzner auction feed** — surface used: `GET https://www.hetzner.com/_resources/app/data/app/live_data_sb.json`, a public unauthenticated JSON endpoint, polled read-only every 10 minutes. **Corrected 2026-08-06** — the original entry here pointed at the Robot API (`robot.hetzner.com/order/server_market/product`) and a legacy `/wird/json.pl` path; neither returns the real feed, and Phase 1's original fetcher was built against a schema that doesn't match either. Full endpoint verification, example payload, and the raw-feed→`RawListing` field mapping (nested `Hardware`/`Prices`/`Details` structure, not the flat shape originally assumed) live in `docs/notes/hetzner-live-feed-schema-2026-08-06.md`. Forbidden: no write/order calls; no Robot API authentication needed since this only reads public listings — that part of the original contract was already correct. Unavailable/changed: if the feed is unreachable or its schema changes shape again (see Edge Case Catalog EC-2), the pipeline aborts the run and keeps serving the last published snapshot; a schema change additionally needs a manual pipeline update, since that's a code change, not a transient blip.
-- **Cloudflare Pages (Direct Upload)** — surface used: `wrangler pages deploy` for both the code deploy path (ADR-6) and the pipeline's 10-minute data publish (ADR-7, supersedes the original R2-based entry here). Forbidden: no Cloudflare git-integration auto-build (ADR-6); pipeline never deploys without first verifying the local Parquet/JSON output is structurally valid (Pipeline Run Lifecycle step 5). Unavailable: pipeline aborts the run without invoking `wrangler` and retries next cycle — same handling as a feed outage; the previously-promoted deployment keeps serving.
+- **Hetzner auction feed** — surface used: `GET https://www.hetzner.com/_resources/app/data/app/live_data_sb.json`, a public unauthenticated JSON endpoint, polled read-only approximately every minute with jitter and backoff. Full endpoint verification and field mapping live in `docs/notes/hetzner-live-feed-schema-2026-08-06.md`.
+- **Cloudflare Pages (Direct Upload)** — surface used only for static `web/` code changes (ADR-6). Data polls never deploy Pages.
+- **Garage data origin** — pipeline writes versioned objects through private S3 credentials; browsers receive public read-only HTTPS with CORS, `HEAD`, and byte-range support. `manifest.json` is the atomic publication pointer (ADR-8 and `docs/architecture.md`).
 - **DuckDB-WASM / httpfs** — surface used: `read_parquet()` over an HTTP(S) URL with range requests, entirely client-side. Forbidden: no server-side query execution, no client-side benchmark join (see What It Is NOT). Unavailable/fails to load: see Graceful Degradation — the dashboard shows an explicit error state rather than a blank page.
 - **Agentation (+ its React 18 peer dependency)** — surface used: mounted as an isolated component tree via CDN ESM import, rendering only its own feedback toolbar; never touches the dashboard's own DOM/state. Forbidden: no dependency on Agentation for any core dashboard functionality — it must be removable with zero effect on filters/sorts/data loading. Unavailable/fails to load (CDN down, ESM import fails): the toolbar silently doesn't appear; the dashboard itself is unaffected, since it was already rendering independently.
 
@@ -143,7 +143,7 @@ Decision: mount Agentation (the workspace's standard UI-feedback tool, house con
 **ADR-6: Argo Workflow + wrangler Direct Upload instead of Cloudflare's git-integration build for `web/`.**
 Decision: deploy `web/` to Cloudflare Pages via a new Argo Workflow on iad-ci that runs `wrangler pages deploy` (Direct Upload) against the already-built static artifacts, rather than connecting the Pages project to Forgejo/GitHub and letting Cloudflare run its own build on every push. Matches jedarden.com's existing `website-build` WorkflowTemplate pattern. Rationale: Cloudflare's git-integration path meters production deployments (500/month on Free, 5,000/month on Pro) — 10-minute-cadence *data* publishing already lives entirely in R2 (ADR-1) precisely to avoid that quota, and routing the comparatively rare `web/` *code* deploys through Cloudflare's own build system would be the one remaining place this project touches that metered path at all. Direct Upload is also Cloudflare's own documented recommendation for "bring your own CI" ("if you want to integrate your own build platform... choose Direct Upload over Git integration"), which is exactly this project's situation — every other build/deploy in this workspace already runs through Argo Workflows on iad-ci, not a third-party platform's native CI. Rejected alternative: Cloudflare's git-integration auto-build on push — rejected because it would be the only deploy path in this project not running through iad-ci, adds a second, Cloudflare-controlled build step with its own (murkier, unverified for Direct-Upload-vs-git-integration) quota accounting, and gains nothing Direct Upload doesn't already provide for a project this size. Invalidation trigger: if Argo Events' webhook wiring for this repo turns out meaningfully harder to stand up than expected (e.g. Forgejo-vs-GitHub webhook source mismatch), fall back to a manual `wrangler pages deploy` submitted the same way jedarden.com's "manual submit" fallback works, before reconsidering Cloudflare's native build.
 
-**ADR-7: Drop Cloudflare R2 — bundle the Parquet snapshot and unmatched-cpus.json into the same Cloudflare Pages deployment as `web/`, published via the pipeline's own `wrangler pages deploy` each cycle. Supersedes ADR-1 and ADR-4.**
+**ADR-7: Drop Cloudflare R2 — bundle the Parquet snapshot and unmatched-cpus.json into the same Cloudflare Pages deployment as `web/`, published via the pipeline's own `wrangler pages deploy` each cycle. SUPERSEDED 2026-08-22 by ADR-8.**
 
 Decision: the pipeline no longer publishes to an R2 bucket. Every 10-minute cycle, it assembles a complete deploy directory — the current `web/` static files plus the freshly-written `current_snapshot.parquet` and `unmatched-cpus.json` — and runs `wrangler pages deploy` against it, using the *same* Cloudflare Pages project and `wrangler` mechanism ADR-6 already established for code deploys. Data and code are no longer two separate infrastructure axes (R2 bucket + Pages project); they're one axis with two independent publish triggers (the pipeline's 10-minute timer, and a code push).
 
@@ -177,13 +177,19 @@ Also changes the pipeline's own dependencies: `r2_publisher.py`'s `boto3`/S3 cal
 
 Rejected alternative: keep R2 (ADR-1's original design) — rejected because the coupling downside is real but small at this project's scale, while R2 costs an entire second Cloudflare product surface (bucket, CORS, its own token/OpenBao path) for a benefit (data/code independence) this project doesn't actually need yet.
 
+**ADR-8: Separate Cloudflare Pages interface from Garage-hosted, manifest-versioned data. Supersedes ADR-7.**
+
+Decision: Cloudflare Pages hosts only static interface code. The one-minute pipeline writes complete immutable Parquet/JSON generations to Garage and replaces `manifest.json` only after remote verification. The browser resolves that manifest through a dedicated public read-only data origin with CORS and HTTP range support. Garage, not a serving PVC, is authoritative. Full contracts and migration order are in `docs/architecture.md`.
+
+Rationale: observed high-value listings can disappear inside the old ten-minute interval. Raising the poll frequency under ADR-7 would also create up to 1,440 complete Pages deployments per day and keep code/data rollback coupled. Object publication makes polling cheap, publishes only actual changes, preserves atomic multi-file generations, and uses the existing Garage/dashboard exporter pattern. Rejected alternatives: a PVC-backed web server (unnecessary stateful serving and failover complexity), continuing per-cycle Pages deployments (deployment churn), and moving the interface itself into `dashboard.ardenone.com` (would make it Authentik-gated and cluster-dependent when only the data publisher needs to move).
+
 ## Components
 
 - `pipeline/` — fetcher + CPU benchmark join + cost-metric computation + Parquet writer; containerized; runs the refresh loop.
 - `benchmark-map/` — maintained CPU-name → benchmark-score reference table + alias/override list, git-tracked and hand-maintained. Highest-maintenance artifact in the repo; see `docs/notes/benchmark-priority.md`.
-- Unmatched-CPU report (`unmatched-cpus.json`) — generated by the pipeline each run and bundled into the same Cloudflare Pages deployment alongside the Parquet snapshot (see ADR-7); not part of the git-tracked `benchmark-map/` directory (see Benchmark Strategy).
-- `web/` — static frontend (DuckDB-WASM + filter/search UI), deployed to Cloudflare Pages via an Argo Workflow + `wrangler` Direct Upload (see ADR-6), never Cloudflare's own git-integration build. A single static HTML page, no JS framework (see Architecture > Client), plus an isolated React root mounting Agentation for UI feedback (see ADR-5). Also carries a `_headers` file setting a short `Cache-Control` on the two data files (see ADR-7).
-- Parquet output + `unmatched-cpus.json` — bundled into the same Cloudflare Pages deployment as `web/`, published by the pipeline's own `wrangler pages deploy` each cycle (see ADR-7 — no separate object store).
+- Unmatched-CPU report (`unmatched-cpus.json`) — generated by the pipeline and published in each changed Garage generation; not part of the git-tracked `benchmark-map/` directory.
+- `web/` — static frontend (DuckDB-WASM + filter/search UI), deployed independently to Cloudflare Pages via Argo Workflow + `wrangler` Direct Upload when code changes.
+- Garage generations + `manifest.json` — durable data contract between the pipeline and browser, served from a dedicated public read-only origin (ADR-8).
 - Hetzner Cloud catalog price lookup (v1.1) — small, hand-maintained CPU/RAM/disk-tier → nearest Hetzner Cloud SKU price table, used only for the Cross-link addition below; much lower-maintenance than `benchmark-map/` since Cloud catalog pricing changes rarely. See v1.1 — Adopted Idea-Gen Additions.
 
 ## Benchmark Strategy
@@ -193,7 +199,7 @@ This is the part of the project that actually matters (see `docs/notes/benchmark
 - **Source (v1):** PassMark single- and multi-thread scores, matching the proven approach of every existing implementation. No reason to start anywhere less-validated.
 - **Matching:** raw CPU string → normalized model name → PassMark ID, via an alias table for naming variants (e.g. "Xeon E5-2680 v4" vs. "E5-2680v4") plus a manual override list for anything that doesn't match cleanly.
 - **No blended score.** Deliberately do *not* build an Auction-Browser+/Server-Auction-Tracker-style single weighted "Total Score" — and don't blend single-thread and multi-thread PassMark scores into one figure either. Expose `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` as independent, separately sortable/filterable columns (closer to hzfind's approach). A fixed arbitrary weighting hides the number that matters most; separate columns let the user decide what to prioritize. `price_per_benchmark_point_multi` is the default sort (see Client Dashboard Scope) since PassMark's own primary CPU Mark rating is multi-thread-based and most auction hardware is multi-core server-class; `_single` remains independently available for single-core-sensitive workloads.
-- **Unmatched CPUs are surfaced, never guessed.** A listing whose CPU has no benchmark match gets a `NULL` score and an explicit "unscored" state in the UI — it is never silently dropped or given a default/estimated value. Each run, the pipeline publishes a companion `unmatched-cpus.json` file at a well-known same-origin path alongside the Parquet snapshot, bundled into the same Cloudflare Pages deployment (see ADR-7, Pipeline Run Lifecycle) — overwritten every cycle with that run's unresolved `cpu_raw` strings and their affected-listing counts, not accumulated across runs. Since the site already serves the Parquet file at that same origin, that same base URL surfaces this report for direct viewing — no separate UI or git-commit path needed. The override list can then be extended from it, highest-volume gaps first; coverage gaps are the main way this project can fail quietly, so they need to stay visible (see Risk Register R6).
+- **Unmatched CPUs are surfaced, never guessed.** A listing whose CPU has no benchmark match gets a `NULL` score and an explicit "unscored" state in the UI — it is never silently dropped or given a default/estimated value. Each changed generation contains `unmatched-cpus.json` at the path selected by the Garage manifest (ADR-8), with the current unresolved `cpu_raw` strings and affected-listing counts. The override list can then be extended from it, highest-volume gaps first; coverage gaps are the main way this project can fail quietly, so they need to stay visible (see Risk Register R6).
 - **v2 candidate (not v1) — Geekbench/YABS cross-validation:** cross-validate/extend PassMark coverage using the disconnected community benchmark data that already exists for Hetzner auction hardware: Geekbench results (posted to Geekbench Browser) and YABS — Yet Another Bench Script — results (posted to community boards like VPSBenchmarks and BareMetalBench), all submitted after-the-fact by buyers rather than joined to any live feed. No existing tool mines this back into a live feed — it's a real opportunity, but out of scope until the PassMark-only v1 is solid. This is the canonical, fuller description of the candidate referenced elsewhere in this plan as "Geekbench/YABS" (see ADR-2, v2/Future Candidates).
 
 ## Data Models
@@ -315,7 +321,7 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   - The CPU-matching fixture set (Testing Strategy) resolves correctly against the reference/alias tables
   - An intentionally-unmatchable CPU string produces `benchmark_matched = false`, never a guessed score
   - Near-miss adversarial pairs (Testing Strategy category 3) each resolve to their own correct match and are asserted to never cross-match each other — this is the fixture set's only defense against Risk Register R1, so it's gated here explicitly rather than left implicit in the first bullet
-  - Unmatched-CPU report is generated in the `unmatched-cpus.json` shape (unresolved `cpu_raw` strings + affected-listing counts) and lists every unresolved CPU seen in the fixture set — publishing it alongside the Parquet file happens in Phase 4, once the Cloudflare Pages publish path exists (ADR-7)
+  - Unmatched-CPU report is generated in the `unmatched-cpus.json` shape (unresolved `cpu_raw` strings + affected-listing counts) and lists every unresolved CPU seen in the fixture set; Phase 4 publishes it in the same immutable Garage generation as the Parquet files
 
 - [ ] **Phase 3: Cost-metric computation + Parquet writer**
   Delivers: `price_effective_monthly`, `price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, and `price_per_tb_disk` computed per listing, written to a single flat Parquet file.
@@ -324,14 +330,14 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   - All four per-resource metrics (`price_per_benchmark_point_single`, `price_per_benchmark_point_multi`, `price_per_gb_ram`, `price_per_tb_disk`) compute correctly against a fixture set of known listings, including one with `benchmark_matched = false` (both benchmark-point metrics are NULL, never a divide-by-zero or fallback estimate)
   - Parquet writer's output passes the DuckDB-WASM httpfs conformance test (Testing Strategy) — required for Phase 3 to be considered complete, since Phase 4's Pages publish and Phase 5's client UI both build on an assumed-working file format
 
-- [ ] **Phase 4: Cloudflare Pages API token + refresh-loop Deployment via declarative-config** (rewritten 2026-08-06 for ADR-7 — was "R2 bucket + API token")
-  Delivers: a running pipeline Deployment (`replicas: 1`, GitOps-managed) that fetches, computes, and publishes via `wrangler pages deploy` on the 10-minute cadence, bundling the Parquet snapshot and `unmatched-cpus.json` into the same Cloudflare Pages deployment as `web/` (see ADR-7).
+- [ ] **Phase 4: Garage generation publisher + refresh-loop Deployment via declarative-config** (rewritten 2026-08-22 for ADR-8)
+  Delivers: a running pipeline Deployment (`replicas: 1`, `Recreate`, GitOps-managed) that polls approximately once per minute and publishes changed immutable generations plus `manifest.json` to Garage.
   Completion criteria:
   - Deployment reconciles cleanly via ArgoCD from `declarative-config`
-  - Cloudflare Pages token is stored as an ExternalSecret (reusing the existing `rs-manager/iad-ci/cloudflare/pages` OpenBao path — already live, used by this environment's other Pages deploys) and never appears in pipeline logs
-  - A forced failure mid-run (e.g. killed fetch) leaves the live deployment untouched — confirmed by checking the previously-promoted deployment is still the one served, since Cloudflare Pages' own atomicity (not a manual hash comparison) is what provides this guarantee now
-  - Both the Parquet snapshot and the `unmatched-cpus.json` report publish each cycle via the same `wrangler pages deploy` call, with the `_headers`-file Cache-Control applied (see Benchmark Strategy, Pipeline Run Lifecycle, ADR-7)
-  - The first real deploy confirms the reused Cloudflare Pages token actually has permission to create and deploy this (new, not-yet-existing) project — ADR-7 flagged this as expected-but-unverified
+  - Garage writer credentials are scoped to the Hetzner artifact prefix and never appear in logs
+  - A forced failure before manifest replacement leaves the previously selected generation live
+  - An unchanged poll creates neither a generation nor a Pages deployment
+  - Public-origin `GET`, `HEAD`, CORS, and byte-range conformance are verified
 
 - [ ] **Phase 5: Client dashboard — DuckDB-WASM wiring + search/filter UI**
   Delivers: the static `web/` site that loads the published Parquet file via DuckDB-WASM httpfs and implements all Client Dashboard Scope (v1) filters/sorts.
@@ -342,12 +348,13 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
   - Early in this phase (before the rest of the UI is built out): confirm `agentation` actually publishes a CDN-consumable ESM build (ADR-5's invalidation trigger) — if not, resolve which rejected alternative to fall back to before proceeding further
   - Agentation's toolbar is mounted via the isolated React root (ADR-5) and functions independently of the dashboard — removing it has zero effect on filters/sorts/data loading
 
-- [ ] **Phase 6: Deploy pipeline to a Rackspace Spot cluster via GitOps; wire the code-only deploy path to not clobber live data** (rewritten 2026-08-06 for ADR-7 — was "build the Argo Workflow that deploys web/")
-  Delivers: both halves live in production — pipeline running unattended on its chosen cluster, publishing data via its own `wrangler pages deploy` calls (Phase 4); and the *code* deploy path — the existing generic `website-build` WorkflowTemplate (ADR-6, no new template needed) — parametrized with the curl-preserve `build-command` from ADR-7 so a `web/`-only push doesn't overwrite the live data with nothing.
+- [ ] **Phase 6: Complete the split deployment and retire per-cycle Pages publishing** (rewritten 2026-08-22 for ADR-8)
+  Delivers: the pipeline publishes Garage data independently while the existing Argo Workflow deploys only `web/` code to Pages.
   Completion criteria:
-  - Pipeline completes at least 3 consecutive scheduled runs without manual intervention, each producing a new live Cloudflare Pages deployment
-  - A code-only push (a `web/` change with no pipeline involvement) deploys via `website-build` with the curl-preserve `build-command` (ADR-7), and the live site's data is unchanged afterward — this is the one new failure mode ADR-7 introduces and Phase 6 must prove doesn't happen
-  - The live site loads the real Parquet file end-to-end with no CORS errors (same-origin now, so absence of CORS errors is itself a completion signal — their presence would mean something regressed to a cross-origin setup)
+  - Pipeline completes at least 3 changed and 3 unchanged polls without manual intervention
+  - A code-only push changes no Garage objects, and a data publication creates no Pages deployment
+  - The live Pages site resolves the manifest and queries the selected Parquet generation end-to-end with no CORS or range errors
+  - The legacy per-cycle Pages publisher and data-preservation curl workaround are removed only after dual-publish verification
   - Open Questions' cluster choice is resolved and reflected in `declarative-config` (already done — see Open Questions)
 
 ## v2 / Future Candidates
@@ -397,7 +404,7 @@ i.e. "cheaper than N% of every time this exact config has appeared." An "at/near
 
 **Known blind spot, confirmed by observation 2026-08-12:** the pipeline only samples every 10 minutes, so a listing that appears and is taken again within one tick is invisible to this design entirely — never recorded in `config_history.parquet`, never flagged by the percentile badge, regardless of how good the price was. Real instances of this have already been observed (configs available for only a couple of minutes before disappearing) — those are exactly the deals this feature is least able to catch, since it's a sampling-cadence problem upstream of any storage/index design, not something a smarter schema fixes. Closing this gap would mean polling more often than 10 minutes, which has its own cost under the current architecture (ADR-7: every cycle re-uploads the full Pages deployment).
 
-**Decision (2026-08-12): keep the 10-minute cadence, accept the blind spot.** Two reasons: (1) usage here isn't continuous real-time monitoring, so missing a deal that's gone in under 10 minutes is a real but acceptable cost, not a functional failure; (2) polling meaningfully faster risks Hetzner rate-limiting or blocking the fetcher outright, which would break the whole pipeline, not just this feature — a worse outcome than the blind spot it would fix. **Invalidation trigger:** revisit only if usage shifts toward wanting to catch flash deals in real time — and if it does, treat it as its own scoped change (fetch interval, its rate-limit risk, and its Pages-redeploy-cost tradeoff), not something to bolt onto the percentile feature.
+**Superseded 2026-08-22 by ADR-8:** usage shifted toward catching flash deals. The target cadence is now approximately one minute with jitter and rate-limit backoff; separating data publication from Pages removes the per-poll deployment cost that previously blocked this change.
 
 ### Historical stats: velocity, listing lifetime, market-level trends — still open, storage not yet designed
 
@@ -436,10 +443,10 @@ first-seen timestamp; a reappearance after expiry creates a new lifecycle.
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|-----------|--------|------------|
 | R1 | CPU-matching produces false-positive matches (wrong benchmark score attached to a listing) | Medium | High | The manual override list and unmatched-CPU report (see Benchmark Strategy) only ever cover zero-match and ambiguous-match cases (EC-3) — by construction neither can surface a confident-but-wrong match, since that `cpu_raw` string resolved successfully. Actual false-positive protection is the CPU-matching fixture set's near-miss adversarial-pair category (Testing Strategy): real, similarly-named-but-distinct CPU models asserted to never cross-match each other |
-| R2 | Cloudflare Pages outage | Low | Medium | Pipeline aborts and retries next cycle (Pipeline Run Lifecycle); dashboard keeps serving the last snapshot it already loaded client-side until Cloudflare Pages recovers |
+| R2 | Garage data origin outage | Low | Medium | Pipeline leaves the manifest unchanged and retries; a client that already loaded a generation can continue using it, while new clients show an explicit data-load error |
 | R3 | Hetzner changes the auction feed's format without notice | Medium | High | Pipeline fails closed on parse error (EC-2), keeps serving the last snapshot, logs the raw payload for a quick manual fix |
 | R4 | DuckDB-WASM hits a scale ceiling as Hetzner's auction volume grows | Low | Medium | See Performance Ceiling — fallback is server-side pre-aggregation or narrower default filters |
-| R5 | Concurrent pipeline writers corrupt the live Parquet file during a rolling redeploy | Low | High | Mitigated structurally by `replicas: 1` + Cloudflare Pages' own atomic deployment promotion (Concurrency Model) — last deploy promoted wins, no partial writes ever visible |
+| R5 | Concurrent pipeline writers race to publish incompatible history generations | Low | High | Mitigated by `replicas: 1`, `Recreate` rollout, immutable generation paths, and publishing the manifest last (Concurrency Model) |
 | R6 | PassMark coverage stays persistently sparse despite a maturing override list — some listings never get a benchmark score | Medium | Medium | Unmatched CPUs are surfaced, never guessed (Benchmark Strategy): NULL score, explicit "unscored" flag, sorted to the top, never blended or dropped — so this fails safely rather than silently, unlike R1. Each run's `unmatched-cpus.json` includes affected-listing counts per unresolved CPU, so overrides can be ranked highest-volume-first from it (see Plan B) — no sorted-output requirement on the pipeline itself, just the counts to rank by. If coverage stays thin after the override list has had a real chance to mature, ADR-2's invalidation trigger promotes the Geekbench/YABS v2 cross-validation candidate ahead of schedule |
 
 ## Plan B / Fallback Strategies

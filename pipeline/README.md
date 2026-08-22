@@ -1,6 +1,10 @@
 # Hetzner Auction Pipeline
 
-Fetches, enriches, and publishes Hetzner auction data.
+Fetches, enriches, and publishes Hetzner auction data. The accepted target
+architecture polls approximately once per minute and publishes changed,
+versioned datasets to Garage; Cloudflare Pages deploys only the static client.
+See [`../docs/architecture.md`](../docs/architecture.md). The current publisher
+still uses Pages while that migration is implemented.
 
 ## Phase 1: Fetcher + Raw Schema
 
@@ -81,5 +85,5 @@ Raises `FetchError` with:
 
 - **Phase 2**: CPU benchmark reference table + matching/override system
 - **Phase 3**: Cost-metric computation + Parquet writer
-- **Phase 4**: Cloudflare Pages publisher + wrangler deploy + refresh-loop Deployment
+- **Phase 4**: Garage generation publisher + manifest + refresh-loop Deployment
 - **Phase 5**: Client dashboard with DuckDB-WASM
