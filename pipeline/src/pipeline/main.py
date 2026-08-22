@@ -13,6 +13,7 @@ ExternalSecret in declarative-config's k8s/iad-ci/hetzner-auction-dashboard/).
 import asyncio
 import logging
 import os
+import random
 import sys
 import tempfile
 import time
@@ -152,27 +153,40 @@ async def main_loop() -> None:
         f"{cpu_matcher.get_aliases_count()} aliases, {cpu_matcher.get_overrides_count()} overrides"
     )
 
+    consecutive_failures = 0
     while True:
         cycle_start = time.monotonic()
+        failed = False
         try:
             await run_once(cpu_matcher)
         except FetchError as e:
+            failed = True
             # Per Pipeline Run Lifecycle: abort before any write, keep serving
             # the last snapshot, retry next cycle.
             logger.error(f"Fetch failed, keeping last published snapshot: {e}")
         except HistoryFetchError as e:
+            failed = True
             # Same handling as a feed failure -- see HistoryFetchError's
             # docstring for why this must NOT fall back to an empty history.
             logger.error(f"Config-history fetch-back failed, keeping last published snapshot: {e}")
         except ListingHistoryFetchError as e:
+            failed = True
             logger.error(f"Listing-history fetch-back failed, keeping last published snapshot: {e}")
         except GaragePublisherError as e:
+            failed = True
             logger.error(f"Publish failed, live deployment untouched: {e}")
         except Exception:
+            failed = True
             logger.exception("Unexpected error in pipeline cycle — keeping last published snapshot")
 
+        consecutive_failures = consecutive_failures + 1 if failed else 0
+        base_delay = min(
+            REFRESH_INTERVAL_SECONDS * (2 ** max(0, consecutive_failures - 1)),
+            900,
+        )
+        jittered_delay = base_delay * random.uniform(0.9, 1.1)
         elapsed = time.monotonic() - cycle_start
-        sleep_for = max(0.0, REFRESH_INTERVAL_SECONDS - elapsed)
+        sleep_for = max(0.0, jittered_delay - elapsed)
         logger.info(f"Cycle took {elapsed:.1f}s, sleeping {sleep_for:.1f}s until next run")
         await asyncio.sleep(sleep_for)
 
