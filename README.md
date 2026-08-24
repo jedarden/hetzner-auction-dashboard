@@ -18,3 +18,9 @@ Pages deployment every ten minutes.
 - `docs/research/` — external reference material and prior art
 - `docs/plan/plan.md` — complete application plan
 - `docs/architecture.md` — canonical deployment and data-publication architecture
+
+---
+
+Part of [jedarden.com](https://jedarden.com)
+
+*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/hetzner-auction-dashboard — issues and PRs are welcome here either way.*
