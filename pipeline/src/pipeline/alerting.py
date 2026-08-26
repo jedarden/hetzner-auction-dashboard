@@ -4,8 +4,8 @@ Threshold-based Telegram alerting for auction listings.
 Fetches back the previous cycle's "already notified" identity set from the
 live deployment (same fetch-back-before-update pattern as
 config_history/listing_history), sends a Telegram alert via telegram-relay
-for any listing under the price threshold that wasn't already notified, and
-returns the new set to persist.
+for any listing under the price ceiling AND above the multi-thread benchmark
+floor that wasn't already notified, and returns the new set to persist.
 
 A listing that stays under threshold across cycles alerts once. Rising back
 above threshold, or disappearing from the feed, drops it from the persisted
@@ -69,7 +69,7 @@ def _format_message(listing) -> str:
     disk = ", ".join(f"{d.count}x{d.capacity_gb}GB {d.type}" for d in listing.disks) or "no disks listed"
     return (
         f"Hetzner auction: €{price:.2f}/mo\n"
-        f"{cpu}, {listing.ram_gb}GB RAM, {disk}\n"
+        f"{cpu} (multi-thread {listing.multi_thread_score}), {listing.ram_gb}GB RAM, {disk}\n"
         f"{listing.datacenter}\n"
         f"{HETZNER_AUCTION_URL}"
     )
@@ -81,16 +81,31 @@ async def send_alert(relay_url: str, listing, timeout: float = 10.0) -> None:
     response.raise_for_status()
 
 
+def _matches_criteria(
+    listing, max_price_cents: int, min_multi_thread_score: int, min_ram_gb: int
+) -> bool:
+    price = listing.price_effective_monthly
+    if price is None or price >= max_price_cents:
+        return False
+    score = listing.multi_thread_score
+    if score is None or score <= min_multi_thread_score:
+        return False
+    if listing.ram_gb < min_ram_gb:
+        return False
+    return True
+
+
 async def evaluate_and_alert(
     listings,
     previous_alerted: set[tuple[str, str]],
     relay_url: str,
-    threshold_cents: int,
+    max_price_cents: int,
+    min_multi_thread_score: int,
+    min_ram_gb: int,
 ) -> set[tuple[str, str]]:
     still_alerted: set[tuple[str, str]] = set()
     for listing in listings:
-        price = listing.price_effective_monthly
-        if price is None or price >= threshold_cents:
+        if not _matches_criteria(listing, max_price_cents, min_multi_thread_score, min_ram_gb):
             continue
         identity = (listing.listing_id, build_config_signature(listing))
         if identity in previous_alerted:
@@ -99,7 +114,11 @@ async def evaluate_and_alert(
         try:
             await send_alert(relay_url, listing)
             still_alerted.add(identity)
-            logger.info(f"Sent Telegram alert for {listing.listing_id} at €{price / 100:.2f}/mo")
+            logger.info(
+                f"Sent Telegram alert for {listing.listing_id} at "
+                f"€{listing.price_effective_monthly / 100:.2f}/mo "
+                f"(multi-thread {listing.multi_thread_score}, {listing.ram_gb}GB RAM)"
+            )
         except httpx.HTTPError as exc:
             logger.error(f"Failed to send Telegram alert for {listing.listing_id}: {exc}")
     return still_alerted

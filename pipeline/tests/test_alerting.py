@@ -4,6 +4,8 @@ Unit tests for Telegram threshold alerting (docs/notes/telegram-alerting.md).
 Covers:
 - crossing detection: new-under-threshold alerts, already-alerted skips,
   above-threshold/disappeared clears the persisted set
+- each of the three criteria (price, multi-thread score, RAM) independently
+  gating an otherwise-matching listing
 - a failed send is not persisted, so it retries next cycle
 - HTTP fetch-back: bootstrap 404/HTML vs. genuine failure (AlertStateFetchError)
 """
@@ -24,15 +26,21 @@ from pipeline.enricher import CostMetricsEnricher
 from pipeline.history_store import build_config_signature
 from pipeline.fetcher import DiskSpec, RawListing
 
+# Production defaults (main.py) -- used as the criteria in every test below
+# so a test failure means "this changed relative to what's actually deployed."
+MAX_PRICE_CENTS = 5500  # €55.00
+MIN_MULTI_THREAD_SCORE = 30000
+MIN_RAM_GB = 64
 
-def _make_listing(listing_id="l1", price_base=5000, price_setup_fee=0):
+
+def _make_listing(listing_id="l1", price_base=5000, price_setup_fee=0, multi_thread_score=35000, ram_gb=64):
     raw = RawListing(
         listing_id=listing_id,
         datacenter="FSN1-DC3",
         location="FSN",
         available_from=None,
         cpu_raw="Intel Xeon E5-2680 v4",
-        ram_gb=64,
+        ram_gb=ram_gb,
         ram_ecc=True,
         disks=[DiskSpec(type="NVMe", count=2, capacity_gb=480)],
         uplink_speed=1000,
@@ -46,7 +54,7 @@ def _make_listing(listing_id="l1", price_base=5000, price_setup_fee=0):
         cpu_normalized="Intel Xeon E5-2680 v4",
         passmark_id=1234,
         single_thread_score=1500,
-        multi_thread_score=8000,
+        multi_thread_score=multi_thread_score,
         cores=14,
         threads=28,
         match_method="direct",
@@ -63,63 +71,95 @@ def _mock_client(mock_response):
     return mock_client
 
 
+async def _evaluate(listings, previous_alerted):
+    return await evaluate_and_alert(
+        listings, previous_alerted, "https://relay/send", MAX_PRICE_CENTS, MIN_MULTI_THREAD_SCORE, MIN_RAM_GB
+    )
+
+
 class TestEvaluateAndAlert:
     @pytest.mark.asyncio
-    async def test_new_listing_under_threshold_sends_and_is_persisted(self):
-        listing = _make_listing(price_base=5000)  # €50.00, under €59 threshold
+    async def test_new_listing_matching_all_criteria_sends_and_is_persisted(self):
+        listing = _make_listing(price_base=5000)  # €50.00, 35000 multi-thread, 64GB -- all pass
         ok_response = MagicMock(status_code=200)
         ok_response.raise_for_status = MagicMock()
         mock_client = _mock_client(ok_response)
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await evaluate_and_alert(
-                [listing], previous_alerted=set(), relay_url="https://relay/send", threshold_cents=5900
-            )
+            result = await _evaluate([listing], previous_alerted=set())
 
         identity = (listing.listing_id, build_config_signature(listing))
         assert result == {identity}
         mock_client.post.assert_awaited_once()
         sent_text = mock_client.post.call_args.kwargs["json"]["text"]
         assert "€50.00/mo" in sent_text
+        assert "35000" in sent_text
         assert "https://www.hetzner.com/sb" in sent_text
 
     @pytest.mark.asyncio
     async def test_already_alerted_listing_is_not_resent(self):
-        listing = _make_listing(price_base=5000)
+        listing = _make_listing()
         identity = (listing.listing_id, build_config_signature(listing))
         mock_client = AsyncMock()
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await evaluate_and_alert(
-                [listing], previous_alerted={identity}, relay_url="https://relay/send", threshold_cents=5900
-            )
+            result = await _evaluate([listing], previous_alerted={identity})
 
         assert result == {identity}
         mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_listing_at_or_above_threshold_is_not_alerted(self):
-        listing = _make_listing(price_base=5900)  # price_effective_monthly == threshold
+    async def test_listing_at_or_above_price_ceiling_is_not_alerted(self):
+        listing = _make_listing(price_base=5500)  # price_effective_monthly == ceiling
         mock_client = AsyncMock()
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await evaluate_and_alert(
-                [listing], previous_alerted=set(), relay_url="https://relay/send", threshold_cents=5900
-            )
+            result = await _evaluate([listing], previous_alerted=set())
 
         assert result == set()
         mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_listing_that_rose_above_threshold_is_dropped_from_state(self):
-        listing = _make_listing(price_base=7000)  # now above threshold
+    async def test_listing_at_or_below_score_floor_is_not_alerted(self):
+        listing = _make_listing(multi_thread_score=30000)  # score == floor, not strictly above
+        mock_client = AsyncMock()
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _evaluate([listing], previous_alerted=set())
+
+        assert result == set()
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unmatched_cpu_with_no_score_is_not_alerted(self):
+        listing = _make_listing(multi_thread_score=None)
+        mock_client = AsyncMock()
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _evaluate([listing], previous_alerted=set())
+
+        assert result == set()
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_listing_below_ram_floor_is_not_alerted(self):
+        listing = _make_listing(ram_gb=32)
+        mock_client = AsyncMock()
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _evaluate([listing], previous_alerted=set())
+
+        assert result == set()
+        mock_client.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_listing_that_no_longer_matches_is_dropped_from_state(self):
+        listing = _make_listing(price_base=7000)  # now above the price ceiling
         identity = (listing.listing_id, build_config_signature(listing))
         mock_client = AsyncMock()
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await evaluate_and_alert(
-                [listing], previous_alerted={identity}, relay_url="https://relay/send", threshold_cents=5900
-            )
+            result = await _evaluate([listing], previous_alerted={identity})
 
         assert result == set()
 
@@ -129,15 +169,13 @@ class TestEvaluateAndAlert:
         mock_client = AsyncMock()
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await evaluate_and_alert(
-                [], previous_alerted=previous, relay_url="https://relay/send", threshold_cents=5900
-            )
+            result = await _evaluate([], previous_alerted=previous)
 
         assert result == set()
 
     @pytest.mark.asyncio
     async def test_failed_send_is_not_persisted_so_it_retries_next_cycle(self):
-        listing = _make_listing(price_base=5000)
+        listing = _make_listing()
         error_response = MagicMock(status_code=502, text="bad gateway")
 
         def _raise(*args, **kwargs):
@@ -148,9 +186,7 @@ class TestEvaluateAndAlert:
         mock_client = _mock_client(error_response)
 
         with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await evaluate_and_alert(
-                [listing], previous_alerted=set(), relay_url="https://relay/send", threshold_cents=5900
-            )
+            result = await _evaluate([listing], previous_alerted=set())
 
         assert result == set()
 

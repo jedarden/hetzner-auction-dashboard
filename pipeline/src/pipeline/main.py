@@ -85,8 +85,10 @@ ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alerted-listings.json")
 TELEGRAM_RELAY_URL = os.environ.get(
     "TELEGRAM_RELAY_URL", "http://telegram-relay.telegram-relay.svc.cluster.local:8080/send"
 )
-TELEGRAM_ALERT_MAX_PRICE_EUR = float(os.environ.get("TELEGRAM_ALERT_MAX_PRICE_EUR", "59.00"))
+TELEGRAM_ALERT_MAX_PRICE_EUR = float(os.environ.get("TELEGRAM_ALERT_MAX_PRICE_EUR", "55.00"))
 TELEGRAM_ALERT_MAX_PRICE_CENTS = round(TELEGRAM_ALERT_MAX_PRICE_EUR * 100)
+TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE = int(os.environ.get("TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE", "30000"))
+TELEGRAM_ALERT_MIN_RAM_GB = int(os.environ.get("TELEGRAM_ALERT_MIN_RAM_GB", "64"))
 
 
 async def run_once(cpu_matcher: CpuMatcher) -> None:
@@ -143,9 +145,18 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     alert_state_url = publisher.active_file_url(ALERT_STATE_KEY) or f"{CONFIG_HISTORY_BASE_URL}/{ALERT_STATE_KEY}"
     previously_alerted = await fetch_alert_state(alert_state_url)
     still_alerted = await evaluate_and_alert(
-        enriched, previously_alerted, TELEGRAM_RELAY_URL, TELEGRAM_ALERT_MAX_PRICE_CENTS
+        enriched,
+        previously_alerted,
+        TELEGRAM_RELAY_URL,
+        TELEGRAM_ALERT_MAX_PRICE_CENTS,
+        TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE,
+        TELEGRAM_ALERT_MIN_RAM_GB,
     )
-    logger.info(f"{len(still_alerted)} listing(s) currently under €{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo alert threshold")
+    logger.info(
+        f"{len(still_alerted)} listing(s) currently matching alert criteria "
+        f"(<€{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo, >{TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE} multi-thread, "
+        f">={TELEGRAM_ALERT_MIN_RAM_GB}GB RAM)"
+    )
 
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:
         deploy_dir = Path(tmpdir)
