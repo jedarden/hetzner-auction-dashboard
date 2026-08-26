@@ -22,7 +22,7 @@ from pathlib import Path
 
 import httpx
 
-from pipeline.enricher import build_config_signature
+from pipeline.history_store import build_config_signature
 
 logger = logging.getLogger(__name__)
 

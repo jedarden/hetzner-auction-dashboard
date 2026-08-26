@@ -20,7 +20,8 @@ from pipeline.alerting import (
     write_alert_state,
 )
 from pipeline.cpu_matcher import BenchmarkMatch
-from pipeline.enricher import CostMetricsEnricher, build_config_signature
+from pipeline.enricher import CostMetricsEnricher
+from pipeline.history_store import build_config_signature
 from pipeline.fetcher import DiskSpec, RawListing
 
 
