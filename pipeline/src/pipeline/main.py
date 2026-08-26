@@ -20,6 +20,12 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pipeline.alerting import (
+    AlertStateFetchError,
+    evaluate_and_alert,
+    fetch_alert_state,
+    write_alert_state,
+)
 from pipeline.cpu_matcher import CpuMatcher
 from pipeline.enricher import enrich_listings_batch
 from pipeline.fetcher import FetchError, HetznerAuctionFetcher
@@ -71,6 +77,16 @@ LISTING_HISTORY_RETENTION_DAYS = int(os.environ.get("LISTING_HISTORY_RETENTION_D
 CONFIG_HISTORY_BASE_URL = os.environ.get(
     "CONFIG_HISTORY_BASE_URL", "https://hetzner-auction-dashboard.pages.dev"
 )
+
+# Telegram alerting (docs/notes/telegram-alerting.md). Same cluster as
+# telegram-relay, reached over in-cluster Service DNS -- no tailnet/TLS
+# dependency for a call this frequent.
+ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alerted-listings.json")
+TELEGRAM_RELAY_URL = os.environ.get(
+    "TELEGRAM_RELAY_URL", "http://telegram-relay.telegram-relay.svc.cluster.local:8080/send"
+)
+TELEGRAM_ALERT_MAX_PRICE_EUR = float(os.environ.get("TELEGRAM_ALERT_MAX_PRICE_EUR", "59.00"))
+TELEGRAM_ALERT_MAX_PRICE_CENTS = round(TELEGRAM_ALERT_MAX_PRICE_EUR * 100)
 
 
 async def run_once(cpu_matcher: CpuMatcher) -> None:
@@ -124,17 +140,26 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     )
     logger.info(f"Listing history now tracks {len(listing_history)} offer lifecycles")
 
+    alert_state_url = publisher.active_file_url(ALERT_STATE_KEY) or f"{CONFIG_HISTORY_BASE_URL}/{ALERT_STATE_KEY}"
+    previously_alerted = await fetch_alert_state(alert_state_url)
+    still_alerted = await evaluate_and_alert(
+        enriched, previously_alerted, TELEGRAM_RELAY_URL, TELEGRAM_ALERT_MAX_PRICE_CENTS
+    )
+    logger.info(f"{len(still_alerted)} listing(s) currently under €{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo alert threshold")
+
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:
         deploy_dir = Path(tmpdir)
         parquet_path = deploy_dir / PARQUET_SNAPSHOT_KEY
         json_path = deploy_dir / UNMATCHED_REPORT_KEY
         history_path = deploy_dir / CONFIG_HISTORY_KEY
         listing_history_path = deploy_dir / LISTING_HISTORY_KEY
+        alert_state_path = deploy_dir / ALERT_STATE_KEY
 
         write_listings_to_parquet(enriched, parquet_path)
         reporter.generate_report(json_path)
         write_history(history, history_path)
         write_listing_history(listing_history, listing_history_path)
+        write_alert_state(still_alerted, alert_state_path)
 
         publisher.publish(deploy_dir, digest, now)
 
@@ -172,6 +197,12 @@ async def main_loop() -> None:
         except ListingHistoryFetchError as e:
             failed = True
             logger.error(f"Listing-history fetch-back failed, keeping last published snapshot: {e}")
+        except AlertStateFetchError as e:
+            failed = True
+            # Same handling as history/listing-history -- falling back to an
+            # empty alert-state set would re-alert every already-notified
+            # listing on a transient fetch failure.
+            logger.error(f"Alert-state fetch-back failed, keeping last published snapshot: {e}")
         except GaragePublisherError as e:
             failed = True
             logger.error(f"Publish failed, live deployment untouched: {e}")
