@@ -23,6 +23,16 @@ ARTIFACTS = (
     "config_history.parquet",
     "listing_history.parquet",
     "unmatched-cpus.json",
+    # Alert dedup state (main.py's ALERT_STATE_KEY). Without this, publish()
+    # never uploads it or registers it in manifest.json, so active_file_url()
+    # always returns None and fetch_alert_state() always falls back to the
+    # Cloudflare Pages origin -- which never actually receives this file and
+    # 200s with the SPA's index.html, read by fetch_alert_state() as "nothing
+    # published yet". previously_alerted is then unconditionally empty on
+    # every cycle, so a listing that stays under threshold across two cycles
+    # gets alerted twice instead of once. Confirmed live 2026-08-27: listing
+    # 3064574 alerted at 11:22:13 and again at 11:23:16.
+    "alerted-listings.json",
 )
 
 

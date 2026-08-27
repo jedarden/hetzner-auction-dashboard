@@ -52,16 +52,22 @@ def test_manifest_is_written_after_verified_generation(mock_client, monkeypatch,
     for name in ("current_snapshot.parquet", "config_history.parquet", "listing_history.parquet"):
         pq.write_table(pa.table({"id": [1]}), tmp_path / name)
     (tmp_path / "unmatched-cpus.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "alerted-listings.json").write_text("[]", encoding="utf-8")
 
     publisher = GaragePublisher()
     manifest = publisher.publish(tmp_path, "abc", datetime(2026, 8, 22, 18, 31, tzinfo=UTC))
 
-    assert s3.upload_file.call_count == 4
+    assert s3.upload_file.call_count == 5
     s3.put_object.assert_called_once()
     body = json.loads(s3.put_object.call_args.kwargs["Body"])
     assert body == manifest
     assert body["dataset_hash"] == "abc"
     assert all(path.startswith("generations/20260822T183100Z/") for path in body["files"].values())
+    # Regression (2026-08-27): alerted-listings.json was missing from ARTIFACTS,
+    # so active_file_url("alerted-listings.json") always returned None and the
+    # alert dedup fetch-back never found what the previous cycle just wrote --
+    # same listing alerted twice in consecutive cycles.
+    assert "alerted-listings.json" in body["files"]
 
 
 @patch("pipeline.garage_publisher.boto3.client")
@@ -83,6 +89,7 @@ def test_storage_prefix_is_hidden_from_public_manifest(mock_client, monkeypatch,
     for name in ("current_snapshot.parquet", "config_history.parquet", "listing_history.parquet"):
         pq.write_table(pa.table({"id": [1]}), tmp_path / name)
     (tmp_path / "unmatched-cpus.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "alerted-listings.json").write_text("[]", encoding="utf-8")
 
     manifest = GaragePublisher().publish(tmp_path, "abc", datetime(2026, 8, 22, 18, 31, tzinfo=UTC))
 
