@@ -1,11 +1,14 @@
 # hetzner-auction-dashboard
 
-Client-side dashboard for Hetzner server auction listings. A polling pipeline
-pre-joins auction data with CPU benchmark scores and cost metrics, publishes
-versioned Parquet generations to Garage, and atomically advances a small
-manifest. The independently deployed Cloudflare Pages interface resolves that
-manifest and uses DuckDB-WASM for local search/filtering without client-side
-joins or a request-time application backend.
+Find a Hetzner auction server by filtering current listings on CPU performance,
+memory, storage, location, and price. Search and filtering run in the browser;
+there is no request-time application backend.
+
+**Live:** [hetzner-auction-dashboard.pages.dev](https://hetzner-auction-dashboard.pages.dev)
+
+The polling pipeline pre-joins Hetzner listings with CPU benchmark scores and
+cost metrics, publishes versioned Parquet generations, and atomically advances
+a small manifest. The browser loads the current generation into DuckDB-WASM.
 
 The accepted target architecture is documented in
 [`docs/architecture.md`](docs/architecture.md). The repository is migrating
