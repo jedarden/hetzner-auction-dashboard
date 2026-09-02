@@ -1,1 +1,4 @@
 .needle-predispatch-sha
+
+# NEEDLE execution traces are local diagnostics.
+**/.beads/traces/
