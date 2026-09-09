@@ -1,0 +1,68 @@
+{
+  "timestamp": "2026-09-09T23:34:11.330937773Z",
+  "total_open_beads": 6,
+  "exclusion_criteria": {
+    "has_assignee": 0,
+    "manually_blocked": 0,
+    "has_dependencies": 5,
+    "resource_conflicts": 0
+  },
+  "final_candidate_count": 1,
+  "excluded_beads": [
+    {
+      "bead_id": "hetznera-2d0d3012",
+      "title": "Cohort fallback: percentile against CPU-family when config_history is too thin",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "hetznera-b1500048",
+      "title": "Tests: config_history merge/percentile math + first-run fetch-back-missing-file",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "hetznera-fd0cb29f",
+      "title": "Wire config_history.parquet + price_percentile_vs_history into pipeline main.py",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "hetznera-065b4676",
+      "title": "config_history.parquet: schema, load/merge/write module",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    },
+    {
+      "bead_id": "hetznera-9783250a",
+      "title": "UI: surface price_percentile_vs_history / all-time-low badge in web/index.html",
+      "priority": 2,
+      "assignee": null,
+      "manual_blocked": false,
+      "has_blockers": true,
+      "blocker_count": 1,
+      "has_resource_conflicts": false,
+      "conflict_count": 0
+    }
+  ]
+}
