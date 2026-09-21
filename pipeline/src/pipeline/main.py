@@ -24,6 +24,8 @@ from pipeline.alerting import (
     AlertStateFetchError,
     evaluate_and_alert,
     fetch_alert_state,
+    global_rule,
+    parse_rules,
     write_alert_state,
 )
 from pipeline.cpu_matcher import CpuMatcher
@@ -91,6 +93,25 @@ TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE = int(os.environ.get("TELEGRAM_ALERT_MIN_M
 TELEGRAM_ALERT_MIN_RAM_GB = int(os.environ.get("TELEGRAM_ALERT_MIN_RAM_GB", "64"))
 
 
+def _alert_rules():
+    """Global rule plus the signature rules from TELEGRAM_ALERT_RULES.
+
+    A malformed rules value is logged loudly and dropped rather than raised:
+    the pipeline's job is publishing the dataset, and a config typo must not
+    stop that -- but it must not silently disable the signature alerts either,
+    hence ERROR level on every cycle it stays broken."""
+    rules = [
+        global_rule(
+            TELEGRAM_ALERT_MAX_PRICE_CENTS, TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE, TELEGRAM_ALERT_MIN_RAM_GB
+        )
+    ]
+    try:
+        rules += parse_rules(os.environ.get("TELEGRAM_ALERT_RULES"))
+    except ValueError as exc:
+        logger.error(f"Ignoring TELEGRAM_ALERT_RULES: {exc}")
+    return rules
+
+
 async def run_once(cpu_matcher: CpuMatcher) -> None:
     fetcher = HetznerAuctionFetcher()
     raw_listings = await fetcher.fetch()
@@ -144,18 +165,12 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
 
     alert_state_url = publisher.active_file_url(ALERT_STATE_KEY) or f"{CONFIG_HISTORY_BASE_URL}/{ALERT_STATE_KEY}"
     previously_alerted = await fetch_alert_state(alert_state_url)
-    still_alerted = await evaluate_and_alert(
-        enriched,
-        previously_alerted,
-        TELEGRAM_RELAY_URL,
-        TELEGRAM_ALERT_MAX_PRICE_CENTS,
-        TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE,
-        TELEGRAM_ALERT_MIN_RAM_GB,
-    )
+    rules = _alert_rules()
+    still_alerted = await evaluate_and_alert(enriched, previously_alerted, TELEGRAM_RELAY_URL, rules=rules)
     logger.info(
-        f"{len(still_alerted)} listing(s) currently matching alert criteria "
-        f"(<€{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo, >{TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE} multi-thread, "
-        f">={TELEGRAM_ALERT_MIN_RAM_GB}GB RAM)"
+        f"{len(still_alerted)} listing(s) currently matching {len(rules)} alert rule(s) "
+        f"(global: <€{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo, >{TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE} multi-thread, "
+        f">={TELEGRAM_ALERT_MIN_RAM_GB}GB RAM; signature rules: {', '.join(r.name for r in rules[1:]) or 'none'})"
     )
 
     with tempfile.TemporaryDirectory(prefix="hetzner-pipeline-") as tmpdir:

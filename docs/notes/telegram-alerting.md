@@ -2,13 +2,37 @@
 
 The pipeline sends a Telegram alert (via [telegram-relay](https://git.ardenone.com/jedarden/telegram-relay),
 an internal HTTP relay deployed alongside this pipeline on ardenone-cluster)
-whenever a listing matches **all three** configured criteria:
+whenever a listing matches **at least one alert rule**. There are two kinds:
+
+**The global rule** (the original threshold) matches any listing that meets
+**all three** of:
 
 - `price_effective_monthly` strictly under a price ceiling — the same field
   the dashboard UI shows as "Price/mo*"
 - `multi_thread_score` strictly above a benchmark floor (an unmatched CPU,
   with no score, never matches)
 - `ram_gb` at or above a minimum
+
+**Signature rules** (`TELEGRAM_ALERT_RULES`, added in 0.4.0) each name a set
+of CPUs and match when all of the rule's set fields hold: `cpus` (normalized
+name, case-insensitive exact), `min_ram_gb`, `ecc` (true/false, or omitted),
+`min_nvme` (count of NVMe drives across all NVMe disk groups) and
+`max_price_eur` (exclusive, on `price_effective_monthly`, so it includes the
+€1.70 IPv4 line). No benchmark gate: the CPU is pinned already, and an
+unmatched CPU (no score) can still match a signature rule.
+
+Why signature rules exist: the pipeline's own `listing_history.parquet`
+(60 s samples since 2026-08-20) shows that the servers worth buying clear at
+a config-specific price, in minutes — an i5-13500 64 GB with two NVMe is
+gone in a quarter of an hour at ≤ €70 and sits for a day at €95; a Ryzen 9
+3900 128 GB ECC sells within ~3.5 h at €164–189. One global ceiling either
+misses those or floods the channel. The production rule set and the sale
+data behind each threshold are in the `configmap.yml` comments.
+
+Reading the history for that analysis: 28% of listing ids that vanish are
+Hetzner re-issuing the id (an identical `config_signature` twin appears within
+60 minutes at the same price), so chain by signature before treating a
+disappearance as a sale.
 
 ## Dedup model
 
@@ -46,11 +70,17 @@ All in `pipeline-config` (`k8s/ardenone-cluster/hetzner-auction-dashboard/config
 | `TELEGRAM_ALERT_MAX_PRICE_EUR` | `55.00` | Price ceiling (exclusive) |
 | `TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE` | `30000` | Benchmark floor (exclusive) |
 | `TELEGRAM_ALERT_MIN_RAM_GB` | `64` | RAM floor (inclusive) |
+| `TELEGRAM_ALERT_RULES` | unset (no signature rules) | JSON list of `{name, cpus[], min_ram_gb, ecc, min_nvme, max_price_eur}`; malformed → logged at ERROR every cycle and ignored, the global rule keeps working |
 | `ALERT_STATE_KEY` | `alerted-listings.json` | Generation-relative filename for the dedup state |
+
+The dedup identity is per listing, not per rule: a listing matching two rules
+alerts once, and the message is prefixed with every matching rule's name
+(`[i5-13500 64GB+ 2xNVMe] Hetzner auction: €61.70/mo …`). A global-only match
+carries no prefix.
 
 ## Message content
 
-CPU, multi-thread benchmark score, RAM, disk, datacenter, price, and a link
+Matching rule names (signature rules only), CPU, multi-thread benchmark score, RAM (with `ECC` when applicable), disk, datacenter, price, and a link
 to `https://www.hetzner.com/sb` (Hetzner's auction page — there is no
 verified stable deep link to an individual listing; the auction UI is a
 client-side SPA over the same feed this pipeline reads, with no discovered

@@ -250,3 +250,122 @@ class TestWriteAlertState:
         rows = json.loads(path.read_text())
 
         assert {(row["listing_id"], row["config_signature"]) for row in rows} == identities
+
+
+# --- signature rules (TELEGRAM_ALERT_RULES) -------------------------------------
+from pipeline.alerting import AlertRule, global_rule, matches_rule, matching_rules, parse_rules  # noqa: E402
+
+
+def _make_typed_listing(cpu="Intel Core i5-13500", ram_gb=64, ram_ecc=False, disks=None,
+                        price_base=6000, multi_thread_score=30789, listing_id="s1"):
+    raw = RawListing(
+        listing_id=listing_id, datacenter="NBG1-DC1", location="NBG", available_from=None,
+        cpu_raw=cpu, ram_gb=ram_gb, ram_ecc=ram_ecc,
+        disks=disks if disks is not None else [DiskSpec(type="NVMe", count=2, capacity_gb=512)],
+        uplink_speed=1000, price_base=price_base, price_setup_fee=0, fetched_at=datetime.now(UTC),
+    )
+    match = BenchmarkMatch(cpu_raw=cpu, matched=True, cpu_normalized=cpu, passmark_id=1, single_thread_score=4000,
+                           multi_thread_score=multi_thread_score, cores=14, threads=20, match_method="direct")
+    return CostMetricsEnricher().enrich_listing(raw, match)
+
+
+I5_RULE = AlertRule(name="i5-13500 64GB+ 2xNVMe", max_price_cents=7000, min_ram_gb=64,
+                    cpus=("Intel Core i5-13500",), min_nvme=2)
+W2295_RULE = AlertRule(name="W-2295 128GB ECC", max_price_cents=13000, min_ram_gb=128,
+                       cpus=("Intel Xeon W-2295",), ecc=True, min_nvme=2)
+GLOBAL = global_rule(MAX_PRICE_CENTS, MIN_MULTI_THREAD_SCORE, MIN_RAM_GB)
+
+
+class TestParseRules:
+    def test_empty_or_missing_is_no_rules(self):
+        assert parse_rules(None) == [] and parse_rules("") == [] and parse_rules("  ") == []
+
+    def test_parses_the_production_shape(self):
+        rules = parse_rules('[{"name":"i5","cpus":["Intel Core i5-13500"],"min_ram_gb":64,"min_nvme":2,"max_price_eur":70},'
+                            ' {"name":"w","cpus":["Intel Xeon W-2295"],"min_ram_gb":128,"ecc":true,"min_nvme":2,"max_price_eur":129.99}]')
+        assert [r.name for r in rules] == ["i5", "w"]
+        assert rules[0].max_price_cents == 7000 and rules[0].ecc is None and rules[0].min_multi_thread_score is None
+        assert rules[1].max_price_cents == 12999 and rules[1].ecc is True and rules[1].cpu_set() == {"intel xeon w-2295"}
+
+    @pytest.mark.parametrize("bad", [
+        "not json", '{"name":"x"}', '[{"cpus":["a"],"max_price_eur":10}]', '[{"name":"x"}]',
+        '[{"name":"x","max_price_eur":"cheap"}]', '[{"name":"x","max_price_eur":0}]',
+        '[{"name":"x","max_price_eur":10,"cpus":[]}]', '[{"name":"x","max_price_eur":10,"ecc":"yes"}]',
+        '[{"name":"x","max_price_eur":10,"min_nvme":-1}]', '[{"name":"x","max_price_eur":10,"min_ram_gb":true}]',
+    ])
+    def test_malformed_rules_raise_naming_the_problem(self, bad):
+        with pytest.raises(ValueError):
+            parse_rules(bad)
+
+
+class TestMatchesRule:
+    def test_cpu_ram_nvme_price_all_hold(self):
+        assert matches_rule(_make_typed_listing(price_base=6000), I5_RULE)  # €61.70 effective < €70
+
+    def test_cpu_match_is_case_insensitive_exact(self):
+        assert matches_rule(_make_typed_listing(cpu="intel core I5-13500"), I5_RULE)
+        assert not matches_rule(_make_typed_listing(cpu="Intel Core i5-12500"), I5_RULE)
+
+    def test_price_ceiling_is_exclusive_on_effective_price(self):
+        # The enricher's effective price is what the rule sees (in production
+        # that includes the IPv4 line); in these fixtures it equals price_base.
+        assert not matches_rule(_make_typed_listing(price_base=7000), I5_RULE)  # == ceiling, not strictly under
+        assert matches_rule(_make_typed_listing(price_base=6999), I5_RULE)
+
+    def test_nvme_floor_counts_only_nvme(self):
+        assert not matches_rule(_make_typed_listing(disks=[DiskSpec(type="NVMe", count=1, capacity_gb=1000),
+                                                           DiskSpec(type="SSD", count=2, capacity_gb=512)]), I5_RULE)
+        assert matches_rule(_make_typed_listing(disks=[DiskSpec(type="NVMe", count=1, capacity_gb=1000),
+                                                       DiskSpec(type="NVMe", count=2, capacity_gb=512)]), I5_RULE)
+
+    def test_ram_floor_and_ecc_requirement(self):
+        ok = _make_typed_listing(cpu="Intel Xeon W-2295", ram_gb=128, ram_ecc=True, price_base=11800)
+        assert matches_rule(ok, W2295_RULE)
+        assert not matches_rule(_make_typed_listing(cpu="Intel Xeon W-2295", ram_gb=64, ram_ecc=True, price_base=11800), W2295_RULE)
+        assert not matches_rule(_make_typed_listing(cpu="Intel Xeon W-2295", ram_gb=128, ram_ecc=False, price_base=11800), W2295_RULE)
+
+    def test_signature_rule_needs_no_benchmark_score(self):
+        assert matches_rule(_make_typed_listing(multi_thread_score=None), I5_RULE)
+        assert not matches_rule(_make_typed_listing(multi_thread_score=None), GLOBAL)
+
+    def test_global_rule_is_the_legacy_criteria(self):
+        cheap_fast = _make_listing(price_base=5000)
+        assert matches_rule(cheap_fast, GLOBAL) and matching_rules(cheap_fast, [GLOBAL, I5_RULE]) == ("global",)
+
+
+class TestEvaluateWithRules:
+    @pytest.mark.asyncio
+    async def test_listing_failing_global_but_matching_a_signature_rule_alerts_with_the_rule_tag(self):
+        listing = _make_typed_listing(price_base=6000)  # €60.00: over the €55 global ceiling, under the i5 rule's €70
+        ok = MagicMock(status_code=200); ok.raise_for_status = MagicMock()
+        client = _mock_client(ok)
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await evaluate_and_alert([listing], set(), "https://relay/send", rules=[GLOBAL, I5_RULE])
+        assert result == {(listing.listing_id, build_config_signature(listing))}
+        text = client.post.call_args.kwargs["json"]["text"]
+        assert text.startswith("[i5-13500 64GB+ 2xNVMe] Hetzner auction: €60.00/mo")
+        assert "64GB RAM" in text
+
+    @pytest.mark.asyncio
+    async def test_listing_matching_no_rule_is_silent(self):
+        listing = _make_typed_listing(cpu="Intel Core i9-9900K", price_base=6000)
+        client = AsyncMock()
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await evaluate_and_alert([listing], set(), "https://relay/send", rules=[GLOBAL, I5_RULE])
+        assert result == set() and not client.post.called
+
+    @pytest.mark.asyncio
+    async def test_two_rules_one_alert_naming_both(self):
+        broad = AlertRule(name="any i5", max_price_cents=9000, cpus=("Intel Core i5-13500",))
+        listing = _make_typed_listing(price_base=6000)
+        ok = MagicMock(status_code=200); ok.raise_for_status = MagicMock()
+        client = _mock_client(ok)
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await evaluate_and_alert([listing], set(), "https://relay/send", rules=[I5_RULE, broad])
+        assert len(result) == 1 and client.post.await_count == 1
+        assert client.post.call_args.kwargs["json"]["text"].startswith("[i5-13500 64GB+ 2xNVMe] [any i5] ")
+
+    @pytest.mark.asyncio
+    async def test_rules_none_without_thresholds_is_a_usage_error(self):
+        with pytest.raises(ValueError):
+            await evaluate_and_alert([], set(), "https://relay/send")
