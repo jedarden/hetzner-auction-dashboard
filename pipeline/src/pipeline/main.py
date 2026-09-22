@@ -87,7 +87,7 @@ ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alerted-listings.json")
 TELEGRAM_RELAY_URL = os.environ.get(
     "TELEGRAM_RELAY_URL", "http://telegram-relay.telegram-relay.svc.cluster.local:8080/send"
 )
-TELEGRAM_ALERT_MAX_PRICE_EUR = float(os.environ.get("TELEGRAM_ALERT_MAX_PRICE_EUR", "55.00"))
+TELEGRAM_ALERT_MAX_PRICE_EUR = float(os.environ.get("TELEGRAM_ALERT_MAX_PRICE_EUR", "60.00"))
 TELEGRAM_ALERT_MAX_PRICE_CENTS = round(TELEGRAM_ALERT_MAX_PRICE_EUR * 100)
 TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE = int(os.environ.get("TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE", "30000"))
 TELEGRAM_ALERT_MIN_RAM_GB = int(os.environ.get("TELEGRAM_ALERT_MIN_RAM_GB", "64"))
@@ -169,7 +169,7 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     still_alerted = await evaluate_and_alert(enriched, previously_alerted, TELEGRAM_RELAY_URL, rules=rules)
     logger.info(
         f"{len(still_alerted)} listing(s) currently matching {len(rules)} alert rule(s) "
-        f"(global: <€{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo, >{TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE} multi-thread, "
+        f"(global: <=€{TELEGRAM_ALERT_MAX_PRICE_EUR:.2f}/mo, >{TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE} multi-thread, "
         f">={TELEGRAM_ALERT_MIN_RAM_GB}GB RAM; signature rules: {', '.join(r.name for r in rules[1:]) or 'none'})"
     )
 

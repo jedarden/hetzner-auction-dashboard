@@ -28,7 +28,7 @@ from pipeline.fetcher import DiskSpec, RawListing
 
 # Production defaults (main.py) -- used as the criteria in every test below
 # so a test failure means "this changed relative to what's actually deployed."
-MAX_PRICE_CENTS = 5500  # €55.00
+MAX_PRICE_CENTS = 6000  # €60.00
 MIN_MULTI_THREAD_SCORE = 30000
 MIN_RAM_GB = 64
 
@@ -109,8 +109,21 @@ class TestEvaluateAndAlert:
         mock_client.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_listing_at_or_above_price_ceiling_is_not_alerted(self):
-        listing = _make_listing(price_base=5500)  # price_effective_monthly == ceiling
+    async def test_listing_at_price_ceiling_is_alerted(self):
+        listing = _make_listing(price_base=6000)  # price_effective_monthly == ceiling
+        ok_response = MagicMock(status_code=200)
+        ok_response.raise_for_status = MagicMock()
+        mock_client = _mock_client(ok_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await _evaluate([listing], previous_alerted=set())
+
+        assert result == {(listing.listing_id, build_config_signature(listing))}
+        mock_client.post.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_listing_above_price_ceiling_is_not_alerted(self):
+        listing = _make_listing(price_base=6001)
         mock_client = AsyncMock()
 
         with patch("httpx.AsyncClient", return_value=mock_client):
@@ -306,11 +319,11 @@ class TestMatchesRule:
         assert matches_rule(_make_typed_listing(cpu="intel core I5-13500"), I5_RULE)
         assert not matches_rule(_make_typed_listing(cpu="Intel Core i5-12500"), I5_RULE)
 
-    def test_price_ceiling_is_exclusive_on_effective_price(self):
+    def test_price_ceiling_is_inclusive_on_effective_price(self):
         # The enricher's effective price is what the rule sees (in production
         # that includes the IPv4 line); in these fixtures it equals price_base.
-        assert not matches_rule(_make_typed_listing(price_base=7000), I5_RULE)  # == ceiling, not strictly under
-        assert matches_rule(_make_typed_listing(price_base=6999), I5_RULE)
+        assert matches_rule(_make_typed_listing(price_base=7000), I5_RULE)
+        assert not matches_rule(_make_typed_listing(price_base=7001), I5_RULE)
 
     def test_nvme_floor_counts_only_nvme(self):
         assert not matches_rule(_make_typed_listing(disks=[DiskSpec(type="NVMe", count=1, capacity_gb=1000),
@@ -336,19 +349,19 @@ class TestMatchesRule:
 class TestEvaluateWithRules:
     @pytest.mark.asyncio
     async def test_listing_failing_global_but_matching_a_signature_rule_alerts_with_the_rule_tag(self):
-        listing = _make_typed_listing(price_base=6000)  # €60.00: over the €55 global ceiling, under the i5 rule's €70
+        listing = _make_typed_listing(price_base=6500)  # €65.00: over the €60 global ceiling, under the i5 rule's €70
         ok = MagicMock(status_code=200); ok.raise_for_status = MagicMock()
         client = _mock_client(ok)
         with patch("httpx.AsyncClient", return_value=client):
             result = await evaluate_and_alert([listing], set(), "https://relay/send", rules=[GLOBAL, I5_RULE])
         assert result == {(listing.listing_id, build_config_signature(listing))}
         text = client.post.call_args.kwargs["json"]["text"]
-        assert text.startswith("[i5-13500 64GB+ 2xNVMe] Hetzner auction: €60.00/mo")
+        assert text.startswith("[i5-13500 64GB+ 2xNVMe] Hetzner auction: €65.00/mo")
         assert "64GB RAM" in text
 
     @pytest.mark.asyncio
     async def test_listing_matching_no_rule_is_silent(self):
-        listing = _make_typed_listing(cpu="Intel Core i9-9900K", price_base=6000)
+        listing = _make_typed_listing(cpu="Intel Core i9-9900K", price_base=6500)
         client = AsyncMock()
         with patch("httpx.AsyncClient", return_value=client):
             result = await evaluate_and_alert([listing], set(), "https://relay/send", rules=[GLOBAL, I5_RULE])

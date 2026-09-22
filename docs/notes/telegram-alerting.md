@@ -7,7 +7,7 @@ whenever a listing matches **at least one alert rule**. There are two kinds:
 **The global rule** (the original threshold) matches any listing that meets
 **all three** of:
 
-- `price_effective_monthly` strictly under a price ceiling — the same field
+- `price_effective_monthly` at or below a price ceiling — the same field
   the dashboard UI shows as "Price/mo*"
 - `multi_thread_score` strictly above a benchmark floor (an unmatched CPU,
   with no score, never matches)
@@ -17,17 +17,14 @@ whenever a listing matches **at least one alert rule**. There are two kinds:
 of CPUs and match when all of the rule's set fields hold: `cpus` (normalized
 name, case-insensitive exact), `min_ram_gb`, `ecc` (true/false, or omitted),
 `min_nvme` (count of NVMe drives across all NVMe disk groups) and
-`max_price_eur` (exclusive, on `price_effective_monthly`, so it includes the
+`max_price_eur` (inclusive, on `price_effective_monthly`, so it includes the
 €1.70 IPv4 line). No benchmark gate: the CPU is pinned already, and an
 unmatched CPU (no score) can still match a signature rule.
 
-Why signature rules exist: the pipeline's own `listing_history.parquet`
-(60 s samples since 2026-08-20) shows that the servers worth buying clear at
-a config-specific price, in minutes — an i5-13500 64 GB with two NVMe is
-gone in a quarter of an hour at ≤ €70 and sits for a day at €95; a Ryzen 9
-3900 128 GB ECC sells within ~3.5 h at €164–189. One global ceiling either
-misses those or floods the channel. The production rule set and the sale
-data behind each threshold are in the `configmap.yml` comments.
+Signature-rule support remains available for a future storage-server rule,
+where disk topology matters independently of compute value. Production has no
+active signature rules as of 0.4.1; its sole active rule is the global compute
+threshold.
 
 Reading the history for that analysis: 28% of listing ids that vanish are
 Hetzner re-issuing the id (an identical `config_signature` twin appears within
@@ -36,16 +33,16 @@ disappearance as a sale.
 
 ## Dedup model
 
-A listing that stays under threshold across cycles alerts once, not every
+A listing that stays at or below the threshold across cycles alerts once, not every
 cycle. State is a small JSON file (`alerted-listings.json`, key
 `(listing_id, config_signature)` — the same identity `listing_history_store`
 uses) fetched back from the live deployment before each cycle and rewritten
 into the new generation, same pattern as `config_history.parquet` /
 `listing_history.parquet`.
 
-- Under threshold, not previously alerted → send, add to the persisted set.
-- Under threshold, already alerted → skip, stays in the set.
-- At/above threshold, or absent from this cycle's fetch → dropped from the
+- At or below threshold, not previously alerted → send, add to the persisted set.
+- At or below threshold, already alerted → skip, stays in the set.
+- Above threshold, or absent from this cycle's fetch → dropped from the
   set, so a later re-drop (price cut, or the listing reappearing) alerts
   again.
 - Send failure → **not** added to the set, so it retries next cycle instead
@@ -67,7 +64,7 @@ All in `pipeline-config` (`k8s/ardenone-cluster/hetzner-auction-dashboard/config
 | Var | Default | Purpose |
 |---|---|---|
 | `TELEGRAM_RELAY_URL` | in-cluster `telegram-relay` Service | Where to POST `{text}` |
-| `TELEGRAM_ALERT_MAX_PRICE_EUR` | `55.00` | Price ceiling (exclusive) |
+| `TELEGRAM_ALERT_MAX_PRICE_EUR` | `60.00` | Price ceiling (inclusive) |
 | `TELEGRAM_ALERT_MIN_MULTI_THREAD_SCORE` | `30000` | Benchmark floor (exclusive) |
 | `TELEGRAM_ALERT_MIN_RAM_GB` | `64` | RAM floor (inclusive) |
 | `TELEGRAM_ALERT_RULES` | unset (no signature rules) | JSON list of `{name, cpus[], min_ram_gb, ecc, min_nvme, max_price_eur}`; malformed → logged at ERROR every cycle and ignored, the global rule keeps working |

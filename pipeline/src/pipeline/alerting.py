@@ -10,11 +10,11 @@ notified, and returns the new set to persist.
 Two kinds of rule, evaluated as an OR:
 
 - the global rule (TELEGRAM_ALERT_MAX_PRICE_EUR / _MIN_MULTI_THREAD_SCORE /
-  _MIN_RAM_GB): any CPU under a price ceiling, above a benchmark floor, with
+  _MIN_RAM_GB): any CPU at or below a price ceiling, above a benchmark floor, with
   enough RAM -- the original single threshold;
 - signature rules (TELEGRAM_ALERT_RULES, a JSON list): a named set of CPUs
-  with a RAM floor, an optional ECC requirement, an NVMe-count floor and a
-  price ceiling. These exist because the listing history shows the servers
+  with a RAM floor, an optional ECC requirement, an NVMe-count floor and an
+  inclusive price ceiling. These exist because the listing history shows the servers
   worth buying clear in minutes at a config-specific price (an i5-13500 64 GB
   at <=€70 is gone in a quarter of an hour; the same box at €95 sits for a
   day), so one global ceiling either misses them or drowns in noise.
@@ -185,7 +185,7 @@ def nvme_count(listing) -> int:
 
 def matches_rule(listing, rule: AlertRule) -> bool:
     price = listing.price_effective_monthly
-    if price is None or price >= rule.max_price_cents:
+    if price is None or price > rule.max_price_cents:
         return False
     if rule.min_multi_thread_score is not None:
         score = listing.multi_thread_score
