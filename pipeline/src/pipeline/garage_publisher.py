@@ -40,6 +40,11 @@ MANIFEST_KEYS: Final = frozenset(
     {"schema_version", "generation", "published_at", "dataset_hash", "files"}
 )
 _GENERATION_RE: Final = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+# Generations kept besides the live one.  At the ~16-minute publish cadence,
+# 24 is roughly six hours of rollback window, and it is far longer than any
+# browser takes between reading manifest.json and fetching the files it names.
+DEFAULT_GENERATION_RETENTION: Final = 24
+_DELETE_BATCH: Final = 1000  # S3 DeleteObjects per-request maximum
 
 
 class GaragePublisherError(RuntimeError):
@@ -111,6 +116,25 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
             raise GaragePublisherError(f"Manifest file path is invalid for {filename}")
 
     return manifest
+
+
+def generation_retention_from_env() -> int:
+    """Read GARAGE_GENERATION_RETENTION; a malformed value never stops publishing."""
+    raw = os.getenv("GARAGE_GENERATION_RETENTION", "").strip()
+    if not raw:
+        return DEFAULT_GENERATION_RETENTION
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 0
+    if value < 1:
+        logger.error(
+            "Invalid GARAGE_GENERATION_RETENTION=%r (need an integer >= 1); using %d",
+            raw,
+            DEFAULT_GENERATION_RETENTION,
+        )
+        return DEFAULT_GENERATION_RETENTION
+    return value
 
 
 def dataset_hash(listings: list[Any]) -> str:
@@ -281,6 +305,85 @@ class GaragePublisher:
             logger.info("Auction dataset unchanged; suppressing publication")
             return None
         return self.publish(directory, digest, now)
+
+    def prune_generations(self, keep: int) -> int:
+        """Delete superseded generations; return how many were deleted.
+
+        Every published cycle adds a full immutable generation (~2.8 MB), and
+        without pruning they filled the shared dashboard-site bucket's quota,
+        which stopped all publication from 2026-10-27 to 2026-11-06.
+
+        Kept: the generation the live manifest names, plus the ``keep`` newest
+        generations (newest by their UTC timestamp id).  When there is no
+        readable, valid manifest nothing is deleted, because the live
+        generation cannot be identified.  Only keys shaped exactly like
+        ``generations/<id>/<file>`` are candidates; anything else under the
+        prefix is left alone.
+
+        The method holds no state, so it behaves the same after a restart.  A
+        partial failure leaves the remaining old generations listed, and the
+        next call retries them.  Old generations are not referenced by the
+        live manifest, so deleting only some of their files changes nothing
+        that is being served.
+        """
+        if keep < 1:
+            raise GaragePublisherError("Generation retention must be at least 1")
+        manifest = self.get_manifest()
+        if not manifest:
+            logger.warning("No active manifest; skipping generation pruning")
+            return 0
+        live = manifest["generation"]
+
+        list_prefix = self._storage_key("generations/")
+        keys_by_generation: dict[str, list[str]] = {}
+        try:
+            paginator = self.s3.get_paginator("list_objects_v2")
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=list_prefix):
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    parts = key[len(list_prefix) :].split("/")
+                    if len(parts) != 2 or not parts[1]:
+                        continue
+                    if not _GENERATION_RE.fullmatch(parts[0]):
+                        continue
+                    keys_by_generation.setdefault(parts[0], []).append(key)
+        except Exception as exc:
+            raise GaragePublisherError("Could not list published generations") from exc
+
+        newest = sorted(keys_by_generation, reverse=True)[:keep]
+        retained = set(newest) | {live}
+        doomed = sorted(g for g in keys_by_generation if g not in retained)
+        keys = [key for g in doomed for key in keys_by_generation[g]]
+        if not keys:
+            return 0
+
+        failed: list[str] = []
+        for start in range(0, len(keys), _DELETE_BATCH):
+            batch = keys[start : start + _DELETE_BATCH]
+            try:
+                response = self.s3.delete_objects(
+                    Bucket=self.bucket,
+                    Delete={"Objects": [{"Key": k} for k in batch], "Quiet": True},
+                )
+            except Exception as exc:
+                raise GaragePublisherError(
+                    f"Could not delete superseded generations "
+                    f"({start} of {len(keys)} objects deleted)"
+                ) from exc
+            failed.extend(err.get("Key", "?") for err in response.get("Errors", []))
+        if failed:
+            raise GaragePublisherError(
+                f"Could not delete {len(failed)} of {len(keys)} objects "
+                f"from superseded generations (first: {failed[0]})"
+            )
+        logger.info(
+            "Pruned %d superseded generation(s) (%d objects); kept %d, live %s",
+            len(doomed),
+            len(keys),
+            len(retained),
+            live,
+        )
+        return len(doomed)
 
     def _storage_key(self, relative_key: str) -> str:
         return f"{self.key_prefix}/{relative_key}" if self.key_prefix else relative_key

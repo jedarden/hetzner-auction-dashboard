@@ -45,7 +45,12 @@ from pipeline.listing_history_store import (
     write_listing_history,
 )
 from pipeline.parquet_writer import write_listings_to_parquet
-from pipeline.garage_publisher import GaragePublisher, GaragePublisherError, dataset_hash
+from pipeline.garage_publisher import (
+    GaragePublisher,
+    GaragePublisherError,
+    dataset_hash,
+    generation_retention_from_env,
+)
 from pipeline.unmatched_reporter import UnmatchedCpuReporter
 
 logging.basicConfig(
@@ -84,6 +89,8 @@ CONFIG_HISTORY_BASE_URL = os.environ.get(
 # telegram-relay, reached over in-cluster Service DNS -- no tailnet/TLS
 # dependency for a call this frequent.
 ALERT_STATE_KEY = os.environ.get("ALERT_STATE_KEY", "alerted-listings.json")
+# Superseded generations kept besides the live one (see prune_generations).
+GENERATION_RETENTION = generation_retention_from_env()
 TELEGRAM_RELAY_URL = os.environ.get(
     "TELEGRAM_RELAY_URL", "http://telegram-relay.telegram-relay.svc.cluster.local:8080/send"
 )
@@ -186,6 +193,16 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
         write_history(history, history_path)
         write_listing_history(listing_history, listing_history_path)
         write_alert_state(still_alerted, alert_state_path)
+
+        # Prune before uploading, not after: if the bucket is already at its
+        # quota the upload is what fails, and a post-publish prune would then
+        # never run (2026-10-27..11-06 outage). Pruning only removes
+        # generations the live manifest does not name, so a failure here is
+        # logged and publication still goes ahead.
+        try:
+            publisher.prune_generations(GENERATION_RETENTION)
+        except GaragePublisherError as e:
+            logger.error(f"Generation pruning failed, publishing anyway: {e}")
 
         publisher.publish(deploy_dir, digest, now)
 

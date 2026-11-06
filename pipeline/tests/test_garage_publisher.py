@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from botocore.exceptions import ClientError
 
 from pipeline.enricher import EnrichedListing
 from pipeline.fetcher import DiskSpec
@@ -15,6 +16,7 @@ from pipeline.garage_publisher import (
     GaragePublisher,
     GaragePublisherError,
     dataset_hash,
+    generation_retention_from_env,
     validate_manifest,
 )
 
@@ -244,3 +246,142 @@ def test_manifest_contract_rejects_wrong_generation_paths():
 
     with pytest.raises(GaragePublisherError, match="file path"):
         validate_manifest(manifest)
+
+
+def _manifest_for(generation):
+    return {
+        "schema_version": 1,
+        "generation": generation,
+        "published_at": "2026-08-22T18:30:04+00:00",
+        "dataset_hash": "h",
+        "files": {name: f"generations/{generation}/{name}" for name in ARTIFACTS},
+    }
+
+
+def _stage_bucket(s3, manifest, keys):
+    s3.get_object.side_effect = lambda **kw: {
+        "Body": io.BytesIO(json.dumps(manifest).encode())
+    }
+    paginator = MagicMock()
+    paginator.paginate.return_value = [
+        {"Contents": [{"Key": k} for k in keys[:3]]},
+        {"Contents": [{"Key": k} for k in keys[3:]]},
+    ]
+    s3.get_paginator.return_value = paginator
+    s3.delete_objects.return_value = {}
+    return paginator
+
+
+def _deleted_keys(s3):
+    return [
+        obj["Key"]
+        for call in s3.delete_objects.call_args_list
+        for obj in call.kwargs["Delete"]["Objects"]
+    ]
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_prune_keeps_live_and_newest_generations(mock_client, monkeypatch):
+    monkeypatch.setenv("GARAGE_KEY_PREFIX", "hetzner-auction-data")
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    gens = [f"20261101T0{h}0000Z" for h in range(6)]  # 00..05, oldest first
+    keys = [
+        f"hetzner-auction-data/generations/{g}/{name}"
+        for g in gens
+        for name in ("current_snapshot.parquet", "listing_history.parquet")
+    ]
+    # Junk that must never be touched even though it sits under the prefix.
+    keys += [
+        "hetzner-auction-data/generations/not-a-generation/x.parquet",
+        "hetzner-auction-data/generations/20261101T000000Z/nested/x.parquet",
+    ]
+    # Live manifest points at an OLD generation (e.g. later publishes failed
+    # after uploading but before the pointer swap); it must survive.
+    paginator = _stage_bucket(s3, _manifest_for(gens[1]), keys)
+
+    assert publisher.prune_generations(keep=2) == 3
+
+    paginator.paginate.assert_called_once_with(
+        Bucket="bucket", Prefix="hetzner-auction-data/generations/"
+    )
+    deleted = set(_deleted_keys(s3))
+    expected = {
+        f"hetzner-auction-data/generations/{g}/{name}"
+        for g in (gens[0], gens[2], gens[3])
+        for name in ("current_snapshot.parquet", "listing_history.parquet")
+    }
+    assert deleted == expected
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_prune_without_manifest_deletes_nothing(mock_client, monkeypatch):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    s3.get_object.side_effect = ClientError(
+        {"Error": {"Code": "NoSuchKey"}}, "GetObject"
+    )
+
+    assert publisher.prune_generations(keep=1) == 0
+    s3.get_paginator.assert_not_called()
+    s3.delete_objects.assert_not_called()
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_prune_nothing_to_delete_makes_no_delete_call(mock_client, monkeypatch):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    keys = [
+        "generations/20261101T000000Z/a.json",
+        "generations/20261101T010000Z/a.json",
+    ]
+    _stage_bucket(s3, _manifest_for("20261101T010000Z"), keys)
+
+    assert publisher.prune_generations(keep=5) == 0
+    s3.delete_objects.assert_not_called()
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_prune_batches_deletes_and_reports_partial_failure(mock_client, monkeypatch):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    # 2500 old single-file generations + the live one -> three delete batches.
+    gens = [
+        f"2026{1 + i // 1000:02d}{1 + i % 28:02d}T{i % 24:02d}{i % 60:02d}00Z"
+        for i in range(2500)
+    ]
+    gens = sorted(set(gens))
+    live = "20261231T235959Z"
+    keys = [f"generations/{g}/a.json" for g in gens] + [f"generations/{live}/a.json"]
+    _stage_bucket(s3, _manifest_for(live), keys)
+    s3.delete_objects.side_effect = [
+        {},
+        {"Errors": [{"Key": "generations/x/a.json", "Code": "InternalError"}]},
+        {},
+    ]
+
+    with pytest.raises(GaragePublisherError, match="Could not delete 1 of"):
+        publisher.prune_generations(keep=1)
+
+    assert s3.delete_objects.call_count == 3
+    sizes = [
+        len(c.kwargs["Delete"]["Objects"]) for c in s3.delete_objects.call_args_list
+    ]
+    assert max(sizes) <= 1000
+    assert f"generations/{live}/a.json" not in _deleted_keys(s3)
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_prune_rejects_zero_retention(mock_client, monkeypatch):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    with pytest.raises(GaragePublisherError):
+        publisher.prune_generations(keep=0)
+    s3.delete_objects.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [(None, 24), ("", 24), ("6", 6), ("0", 24), ("-3", 24), ("lots", 24)],
+)
+def test_generation_retention_from_env(monkeypatch, raw, expected):
+    if raw is None:
+        monkeypatch.delenv("GARAGE_GENERATION_RETENTION", raising=False)
+    else:
+        monkeypatch.setenv("GARAGE_GENERATION_RETENTION", raw)
+    assert generation_retention_from_env() == expected
