@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,7 +40,7 @@ MANIFEST_SCHEMA_VERSION: Final = 1
 MANIFEST_KEYS: Final = frozenset(
     {"schema_version", "generation", "published_at", "dataset_hash", "files"}
 )
-_GENERATION_RE: Final = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
+_GENERATION_RE: Final = re.compile(r"^[0-9]{8}T[0-9]{6}Z(?:-[0-9a-f]{32})?$")
 # Generations kept besides the live one.  At the ~16-minute publish cadence,
 # 24 is roughly six hours of rollback window, and it is far longer than any
 # browser takes between reading manifest.json and fetching the files it names.
@@ -80,6 +81,12 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
         raise GaragePublisherError(
             "Manifest generation must be a UTC timestamp identifier"
         )
+    try:
+        datetime.strptime(generation[:16], "%Y%m%dT%H%M%SZ")
+    except ValueError as exc:
+        raise GaragePublisherError(
+            "Manifest generation must contain a valid UTC timestamp"
+        ) from exc
 
     published_at = manifest["published_at"]
     if not isinstance(published_at, str):
@@ -227,14 +234,18 @@ class GaragePublisher:
         if now.tzinfo is None:
             raise GaragePublisherError("Generation timestamp must include a timezone")
         now = now.astimezone(UTC)
-        generation = now.strftime("%Y%m%dT%H%M%SZ")
+        # A timestamp alone can be reused by a retry or another publish in the
+        # same second.  That would overwrite objects still named by the old
+        # manifest before the new pointer is committed.
+        generation = f"{now.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex}"
         prefix = f"generations/{generation}"
 
         # Complete local validation is a publication barrier.  No remote
         # object is written until every expected artifact is present and
         # parseable, which keeps failures before the pointer swap invisible.
-        for filename in ARTIFACTS:
-            self._verify(directory / filename)
+        local_artifacts = {
+            filename: self._verify(directory / filename) for filename in ARTIFACTS
+        }
 
         files = {filename: f"{prefix}/{filename}" for filename in ARTIFACTS}
         manifest = {
@@ -266,13 +277,36 @@ class GaragePublisher:
                         "CacheControl": "public, max-age=31536000, immutable",
                     },
                 )
+            except Exception as exc:
+                raise GaragePublisherError(f"Could not upload {filename}") from exc
+
+        for filename in ARTIFACTS:
+            key = self._storage_key(files[filename])
+            expected_size, expected_digest = local_artifacts[filename]
+            try:
                 head = self.s3.head_object(Bucket=self.bucket, Key=key)
+                if head.get("ContentLength") != expected_size:
+                    raise GaragePublisherError(
+                        f"Remote verification failed for {filename}: size differs"
+                    )
+                response = self.s3.get_object(Bucket=self.bucket, Key=key)
+                body_stream = response["Body"]
+                try:
+                    remote_hash = hashlib.sha256()
+                    while chunk := body_stream.read(1024 * 1024):
+                        remote_hash.update(chunk)
+                finally:
+                    body_stream.close()
+                if remote_hash.hexdigest() != expected_digest:
+                    raise GaragePublisherError(
+                        f"Remote verification failed for {filename}: content differs"
+                    )
+            except GaragePublisherError:
+                raise
             except Exception as exc:
                 raise GaragePublisherError(
-                    f"Could not publish or verify {filename}"
+                    f"Could not verify remote {filename}"
                 ) from exc
-            if head.get("ContentLength") != path.stat().st_size:
-                raise GaragePublisherError(f"Remote verification failed for {filename}")
 
         body = json.dumps(manifest, sort_keys=True, indent=2).encode()
         try:
@@ -389,15 +423,20 @@ class GaragePublisher:
         return f"{self.key_prefix}/{relative_key}" if self.key_prefix else relative_key
 
     @staticmethod
-    def _verify(path: Path) -> None:
+    def _verify(path: Path) -> tuple[int, str]:
         if not path.is_file() or path.stat().st_size == 0:
             raise GaragePublisherError(f"Artifact missing or empty: {path.name}")
         try:
             if path.suffix == ".parquet":
-                pq.read_metadata(path)
+                pq.read_table(path)
             else:
                 json.loads(path.read_text(encoding="utf-8"))
         except Exception as exc:
             raise GaragePublisherError(
                 f"Artifact verification failed: {path.name}"
             ) from exc
+        digest = hashlib.sha256()
+        with path.open("rb") as artifact:
+            while chunk := artifact.read(1024 * 1024):
+                digest.update(chunk)
+        return path.stat().st_size, digest.hexdigest()

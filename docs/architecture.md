@@ -59,16 +59,22 @@ An example manifest is:
 ```json
 {
   "schema_version": 1,
-  "generation": "2026-08-22T18:31:00Z",
+  "generation": "20260822T183100Z-0123456789abcdef0123456789abcdef",
   "published_at": "2026-08-22T18:31:04Z",
+  "dataset_hash": "12b858f2f6dc4b8b0a1f2ddc247130ca2d1e149ffcab06ba2772c85a8e9903b6",
   "files": {
-    "snapshot": "generations/20260822T183100Z/current_snapshot.parquet",
-    "listing_history": "generations/20260822T183100Z/listing_history.parquet",
-    "config_history": "generations/20260822T183100Z/config_history.parquet",
-    "unmatched_cpus": "generations/20260822T183100Z/unmatched-cpus.json"
+    "current_snapshot.parquet": "generations/20260822T183100Z-0123456789abcdef0123456789abcdef/current_snapshot.parquet",
+    "listing_history.parquet": "generations/20260822T183100Z-0123456789abcdef0123456789abcdef/listing_history.parquet",
+    "config_history.parquet": "generations/20260822T183100Z-0123456789abcdef0123456789abcdef/config_history.parquet",
+    "unmatched-cpus.json": "generations/20260822T183100Z-0123456789abcdef0123456789abcdef/unmatched-cpus.json",
+    "alerted-listings.json": "generations/20260822T183100Z-0123456789abcdef0123456789abcdef/alerted-listings.json"
   }
 }
 ```
+
+Generation IDs combine a UTC timestamp with a unique suffix so a retry in the
+same second cannot overwrite objects named by the active manifest. The reader
+also accepts earlier timestamp-only generation IDs.
 
 The manifest is the only mutable publication pointer. Readers therefore see
 either the prior complete generation or the next complete generation, never a

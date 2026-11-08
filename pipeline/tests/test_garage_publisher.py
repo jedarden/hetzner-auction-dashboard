@@ -77,6 +77,9 @@ def test_manifest_is_written_after_verified_generation(
     s3.head_object.side_effect = lambda **kw: {
         "ContentLength": (tmp_path / Path(kw["Key"]).name).stat().st_size
     }
+    s3.get_object.side_effect = lambda **kw: {
+        "Body": io.BytesIO((tmp_path / Path(kw["Key"]).name).read_bytes())
+    }
     mock_client.return_value = s3
     for name in (
         "current_snapshot.parquet",
@@ -97,8 +100,9 @@ def test_manifest_is_written_after_verified_generation(
     body = json.loads(s3.put_object.call_args.kwargs["Body"])
     assert body == manifest
     assert body["dataset_hash"] == "abc"
+    assert manifest["generation"].startswith("20260822T183100Z-")
     assert all(
-        path.startswith("generations/20260822T183100Z/")
+        path.startswith(f"generations/{manifest['generation']}/")
         for path in body["files"].values()
     )
     # Regression (2026-08-27): alerted-listings.json was missing from ARTIFACTS,
@@ -124,6 +128,9 @@ def test_storage_prefix_is_hidden_from_public_manifest(
     s3 = MagicMock()
     s3.head_object.side_effect = lambda **kw: {
         "ContentLength": (tmp_path / Path(kw["Key"]).name).stat().st_size
+    }
+    s3.get_object.side_effect = lambda **kw: {
+        "Body": io.BytesIO((tmp_path / Path(kw["Key"]).name).read_bytes())
     }
     mock_client.return_value = s3
     for name in (
@@ -200,7 +207,13 @@ def test_remote_verification_failure_does_not_replace_prior_manifest(
         "dataset_hash": "prior",
         "files": {name: f"generations/20260822T183000Z/{name}" for name in ARTIFACTS},
     }
-    s3.get_object.return_value = {"Body": io.BytesIO(json.dumps(prior).encode())}
+    s3.get_object.side_effect = lambda **kw: {
+        "Body": io.BytesIO(
+            json.dumps(prior).encode()
+            if kw["Key"] == "manifest.json"
+            else (tmp_path / Path(kw["Key"]).name).read_bytes()
+        )
+    }
     sizes = [(tmp_path / name).stat().st_size for name in ARTIFACTS]
     s3.head_object.side_effect = [{"ContentLength": size} for size in sizes[:-1]] + [
         {"ContentLength": 0}
@@ -211,6 +224,84 @@ def test_remote_verification_failure_does_not_replace_prior_manifest(
 
     assert publisher.get_manifest() == prior
     s3.put_object.assert_not_called()
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_same_second_retry_cannot_overwrite_live_generation(
+    mock_client, monkeypatch, tmp_path
+):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    _write_generation(tmp_path)
+    s3.head_object.side_effect = lambda **kw: {
+        "ContentLength": (tmp_path / Path(kw["Key"]).name).stat().st_size
+    }
+    s3.get_object.side_effect = lambda **kw: {
+        "Body": io.BytesIO((tmp_path / Path(kw["Key"]).name).read_bytes())
+    }
+    now = datetime(2026, 8, 22, 18, 31, tzinfo=UTC)
+    prior = publisher.publish(tmp_path, "first", now)
+    prior_keys = {call.args[2] for call in s3.upload_file.call_args_list}
+
+    (tmp_path / "unmatched-cpus.json").write_text('{"new": true}', encoding="utf-8")
+    s3.head_object.side_effect = lambda **kw: {"ContentLength": 0}
+    with pytest.raises(GaragePublisherError, match="Remote verification failed"):
+        publisher.publish(tmp_path, "second", now)
+
+    retry_keys = {call.args[2] for call in s3.upload_file.call_args_list[5:]}
+    assert prior_keys.isdisjoint(retry_keys)
+    s3.put_object.assert_called_once()
+    s3.get_object.side_effect = lambda **kw: {
+        "Body": io.BytesIO(json.dumps(prior).encode())
+    }
+    assert publisher.get_manifest() == prior
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_local_parquet_data_pages_are_read_before_upload(
+    mock_client, monkeypatch, tmp_path
+):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    _write_generation(tmp_path)
+    path = tmp_path / "current_snapshot.parquet"
+    pq.write_table(pa.table({"x": list(range(10000))}), path, compression="gzip")
+    damaged = bytearray(path.read_bytes())
+    damaged[20] ^= 0xFF
+    path.write_bytes(damaged)
+    pq.read_metadata(path)  # The footer alone is still valid.
+
+    with pytest.raises(GaragePublisherError, match="current_snapshot.parquet"):
+        publisher.publish(tmp_path, "new")
+    s3.upload_file.assert_not_called()
+    s3.put_object.assert_not_called()
+
+
+@patch("pipeline.garage_publisher.boto3.client")
+def test_equal_length_remote_corruption_keeps_prior_pointer(
+    mock_client, monkeypatch, tmp_path
+):
+    publisher, s3 = _publisher(mock_client, monkeypatch)
+    _write_generation(tmp_path)
+    prior = _manifest_for("20260822T183000Z")
+    s3.head_object.side_effect = lambda **kw: {
+        "ContentLength": (tmp_path / Path(kw["Key"]).name).stat().st_size
+    }
+
+    def remote_object(**kw):
+        if kw["Key"] == "manifest.json":
+            return {"Body": io.BytesIO(json.dumps(prior).encode())}
+        filename = Path(kw["Key"]).name
+        payload = (
+            b"[]"
+            if filename == "unmatched-cpus.json"
+            else (tmp_path / filename).read_bytes()
+        )
+        return {"Body": io.BytesIO(payload)}
+
+    s3.get_object.side_effect = remote_object
+    with pytest.raises(GaragePublisherError, match="content differs"):
+        publisher.publish(tmp_path, "new")
+    s3.put_object.assert_not_called()
+    assert publisher.get_manifest() == prior
 
 
 @patch("pipeline.garage_publisher.boto3.client")
@@ -245,6 +336,29 @@ def test_manifest_contract_rejects_wrong_generation_paths():
     )
 
     with pytest.raises(GaragePublisherError, match="file path"):
+        validate_manifest(manifest)
+
+
+@pytest.mark.parametrize(
+    "generation",
+    ["20260822T183100Z", "20260822T183100Z-0123456789abcdef0123456789abcdef"],
+)
+def test_manifest_contract_accepts_legacy_and_unique_generations(generation):
+    assert validate_manifest(_manifest_for(generation))["generation"] == generation
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("schema_version", 2),
+        ("generation", "20261322T183100Z"),
+        ("published_at", "2026-08-22T18:31:04"),
+    ],
+)
+def test_manifest_contract_rejects_invalid_version_and_timestamps(field, value):
+    manifest = _manifest_for("20260822T183100Z")
+    manifest[field] = value
+    with pytest.raises(GaragePublisherError):
         validate_manifest(manifest)
 
 
