@@ -33,7 +33,6 @@ from pipeline.enricher import enrich_listings_batch
 from pipeline.fetcher import FetchError, HetznerAuctionFetcher
 from pipeline.history_store import (
     HistoryFetchError,
-    compute_percentiles,
     fetch_history,
     update_history,
     write_history,
@@ -43,6 +42,15 @@ from pipeline.listing_history_store import (
     fetch_listing_history,
     update_listing_history,
     write_listing_history,
+)
+from pipeline.offer_index import (
+    OfferIndexFetchError,
+    compute_offer_percentiles,
+    fetch_offer_index,
+    merge_listing_history,
+    observe_listings,
+    seed_from_config_history,
+    write_offer_index,
 )
 from pipeline.parquet_writer import write_listings_to_parquet
 from pipeline.garage_publisher import (
@@ -80,6 +88,7 @@ WEB_CACHE_DIR = Path(os.environ.get("WEB_CACHE_DIR", "/tmp/web-cache"))
 # web_fetcher.py's per-cycle web/ refresh.
 CONFIG_HISTORY_KEY = os.environ.get("CONFIG_HISTORY_KEY", "config_history.parquet")
 LISTING_HISTORY_KEY = os.environ.get("LISTING_HISTORY_KEY", "listing_history.parquet")
+OFFER_INDEX_KEY = os.environ.get("OFFER_INDEX_KEY", "offer_index.parquet")
 LISTING_HISTORY_RETENTION_DAYS = int(os.environ.get("LISTING_HISTORY_RETENTION_DAYS", "180"))
 CONFIG_HISTORY_BASE_URL = os.environ.get(
     "CONFIG_HISTORY_BASE_URL", "https://hetzner-auction-dashboard.pages.dev"
@@ -160,11 +169,23 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
     history = await fetch_history(history_url)
     now = datetime.now(UTC)
     update_history(history, enriched, now)
-    compute_percentiles(history, enriched)
     logger.info(f"Config history now tracks {len(history)} distinct configurations")
 
     listing_history_url = publisher.active_file_url(LISTING_HISTORY_KEY) or f"{CONFIG_HISTORY_BASE_URL}/{LISTING_HISTORY_KEY}"
     listing_history = await fetch_listing_history(listing_history_url)
+
+    # The offer index has no Pages fallback: a manifest that does not name it
+    # yet means first rollout, and listing_history seeds it below. Merging
+    # listing_history every cycle is idempotent and repairs any gap.
+    offers = await fetch_offer_index(publisher.active_file_url(OFFER_INDEX_KEY))
+    merge_listing_history(offers, listing_history)
+    observe_listings(offers, enriched, now)
+    seed_from_config_history(offers, history)
+    # Percentiles are written into listing_history rows, so rank before
+    # update_listing_history copies the listings.
+    compute_offer_percentiles(offers, enriched)
+    logger.info(f"Offer index now tracks {len(offers)} offers")
+
     update_listing_history(
         listing_history, enriched, now, LISTING_HISTORY_RETENTION_DAYS, cpu_matcher=cpu_matcher
     )
@@ -187,12 +208,14 @@ async def run_once(cpu_matcher: CpuMatcher) -> None:
         history_path = deploy_dir / CONFIG_HISTORY_KEY
         listing_history_path = deploy_dir / LISTING_HISTORY_KEY
         alert_state_path = deploy_dir / ALERT_STATE_KEY
+        offer_index_path = deploy_dir / OFFER_INDEX_KEY
 
         write_listings_to_parquet(enriched, parquet_path)
         reporter.generate_report(json_path)
         write_history(history, history_path)
         write_listing_history(listing_history, listing_history_path)
         write_alert_state(still_alerted, alert_state_path)
+        write_offer_index(offers, offer_index_path)
 
         # Prune before uploading, not after: if the bucket is already at its
         # quota the upload is what fails, and a post-publish prune would then
@@ -240,6 +263,11 @@ async def main_loop() -> None:
         except ListingHistoryFetchError as e:
             failed = True
             logger.error(f"Listing-history fetch-back failed, keeping last published snapshot: {e}")
+        except OfferIndexFetchError as e:
+            failed = True
+            # Rebuilding from listing_history alone would drop offers older
+            # than its retention window.
+            logger.error(f"Offer-index fetch-back failed, keeping last published snapshot: {e}")
         except AlertStateFetchError as e:
             failed = True
             # Same handling as history/listing-history -- falling back to an

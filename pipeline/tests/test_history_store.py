@@ -5,7 +5,6 @@ Unit tests for the v2 historical-value feature (docs/plan/plan.md
 Covers:
 - config_signature / cpu cohort key generation and stability
 - histogram accumulation across cycles (update_history)
-- percentile derivation math, all-time-low detection, cohort fallback
 - Parquet round-trip (write_history -> read back)
 - HTTP fetch-back: bootstrap 404 vs. genuine failure (HistoryFetchError)
 """
@@ -22,14 +21,10 @@ from pipeline.cpu_matcher import BenchmarkMatch
 from pipeline.enricher import CostMetricsEnricher
 from pipeline.fetcher import DiskSpec, RawListing
 from pipeline.history_store import (
-    ConfigHistoryEntry,
     HistoryFetchError,
-    _cohort_histogram,
-    _percentile_from_histogram,
     _table_to_history,
     build_config_signature,
     build_cpu_cohort_key,
-    compute_percentiles,
     fetch_history,
     history_to_table,
     update_history,
@@ -182,114 +177,6 @@ class TestUpdateHistory:
 
         sig = build_config_signature(cheap)
         assert history[sig].min_price_effective_monthly == cheap.price_effective_monthly
-
-
-class TestPercentileMath:
-    def test_percentile_formula_matches_spec(self):
-        # prices 90(x1), 100(x2), 110(x1) -- total 4 observations.
-        # current=100 -> observations >= 100 are the two 100s and the 110 = 3/4
-        histogram = {90: 1, 100: 2, 110: 1}
-        assert _percentile_from_histogram(histogram, 4, 100) == pytest.approx(0.75)
-
-    def test_percentile_for_price_below_everything_is_1(self):
-        histogram = {90: 1, 100: 2, 110: 1}
-        assert _percentile_from_histogram(histogram, 4, 50) == pytest.approx(1.0)
-
-    def test_percentile_for_price_above_everything_is_0(self):
-        histogram = {90: 1, 100: 2, 110: 1}
-        assert _percentile_from_histogram(histogram, 4, 1000) == pytest.approx(0.0)
-
-    def test_percentile_with_zero_observations_is_none(self):
-        assert _percentile_from_histogram({}, 0, 100) is None
-
-
-class TestComputePercentiles:
-    def test_all_time_low_on_first_observation(self):
-        listing = _make_listing(price_base=2999)
-        history = update_history({}, [listing], datetime.now(UTC))
-
-        compute_percentiles(history, [listing])
-
-        assert listing.is_all_time_low is True
-        assert listing.price_percentile_vs_history == pytest.approx(1.0)
-        assert listing.history_sample_size == 1
-        assert listing.history_cohort_fallback is False
-
-    def test_not_all_time_low_when_price_rose(self):
-        cheap = _make_listing(listing_id="cheap", price_base=1999)
-        history = update_history({}, [cheap], datetime.now(UTC))
-
-        expensive = _make_listing(listing_id="expensive", price_base=2999)
-        update_history(history, [expensive], datetime.now(UTC))
-        compute_percentiles(history, [expensive])
-
-        assert expensive.is_all_time_low is False
-        # 2 observations (1999, 2999); current=2999 -> only itself is >= 2999 -> 1/2
-        assert expensive.price_percentile_vs_history == pytest.approx(0.5)
-
-    def test_percentile_propagates_to_benchmark_metrics_when_matched(self):
-        listing = _make_listing(benchmark_matched=True)
-        history = update_history({}, [listing], datetime.now(UTC))
-        compute_percentiles(history, [listing])
-
-        assert listing.price_per_benchmark_point_multi_percentile_vs_history == listing.price_percentile_vs_history
-        assert listing.price_per_benchmark_point_single_percentile_vs_history == listing.price_percentile_vs_history
-
-    def test_percentile_is_none_for_benchmark_metrics_when_unmatched(self):
-        listing = _make_listing(benchmark_matched=False)
-        history = update_history({}, [listing], datetime.now(UTC))
-        compute_percentiles(history, [listing])
-
-        assert listing.price_percentile_vs_history is not None  # price history still tracked
-        assert listing.price_per_benchmark_point_multi_percentile_vs_history is None
-        assert listing.price_per_benchmark_point_single_percentile_vs_history is None
-
-    def test_cohort_fallback_below_threshold(self):
-        # Two different exact configs (different RAM) sharing the same CPU.
-        a = _make_listing(listing_id="a", ram_gb=64, price_base=1999)
-        b = _make_listing(listing_id="b", ram_gb=128, price_base=2999)
-
-        history = update_history({}, [a], datetime.now(UTC))
-        update_history(history, [b], datetime.now(UTC))
-
-        # `a`'s own signature has only 1 observation -- below the default
-        # threshold of 5 -- so it should fall back to the CPU-wide cohort
-        # (a + b combined = 2 observations), not just its own 1.
-        compute_percentiles(history, [a], min_observations=5)
-
-        assert a.history_cohort_fallback is True
-        assert a.history_sample_size == 2  # cohort total, not own total (1)
-
-    def test_own_histogram_used_once_threshold_met(self):
-        a = _make_listing(listing_id="a", ram_gb=64, price_base=1999)
-        history = {}
-        for i in range(3):
-            update_history(history, [_make_listing(listing_id=f"a{i}", ram_gb=64, price_base=1999)], datetime.now(UTC))
-
-        compute_percentiles(history, [a], min_observations=3)
-
-        assert a.history_cohort_fallback is False
-        assert a.history_sample_size == 3
-
-    def test_cohort_histogram_merges_across_signatures(self):
-        a = _make_listing(listing_id="a", ram_gb=64, price_base=1999)
-        b = _make_listing(listing_id="b", ram_gb=128, price_base=2999)
-        history = update_history({}, [a], datetime.now(UTC))
-        update_history(history, [b], datetime.now(UTC))
-
-        merged, total = _cohort_histogram(history, build_cpu_cohort_key(a))
-        assert total == 2
-        assert merged == {a.price_effective_monthly: 1, b.price_effective_monthly: 1}
-
-    def test_no_history_at_all_is_none_percentile(self):
-        # compute_percentiles called on a listing that was never folded into
-        # `history` via update_history (defensive edge case).
-        listing = _make_listing()
-        compute_percentiles({}, [listing])
-
-        assert listing.price_percentile_vs_history is None
-        assert listing.history_sample_size == 0
-        assert listing.is_all_time_low is False
 
 
 class TestSerializationRoundTrip:

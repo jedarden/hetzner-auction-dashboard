@@ -361,6 +361,24 @@ Explicitly out of scope at this scale: audit logging and a per-threat security m
 
 Not part of the initial build — noted so later scope decisions don't have to be re-derived from scratch:
 
+### Configuration index — IMPLEMENTED 2026-11-09 (0.6.0)
+
+**Supersedes the ranking basis of the section below.** The goal is to index every unique hardware configuration and show the distribution of its prices (extremes and frequency). `config_history.parquet`'s histogram could not do that faithfully, for three reasons:
+- it counts one observation per published cycle, so its weights follow the polling rate (about 5/h per listing in Aug 2026, 18/h in Sep–Oct, 60/h from Nov) and favour offers that stay unsold;
+- its signature includes the datacenter (3,154 signatures but 1,279 hardware configurations);
+- the UI never showed a distribution.
+
+Decisions:
+1. **New artifact `offer_index.parquet`** (`pipeline/src/pipeline/offer_index.py`). It has one row per offer, keyed by `(config_signature, listing_id)`, holding first and last seen plus the first, lowest and last price. There is no retention window.
+   - It is merged idempotently every cycle from `listing_history` and the current listings, so it seeds itself on rollout and repairs itself afterwards.
+   - Configurations known only to `config_history` (14–20 Aug 2026, before `listing_history` existed) get one placeholder offer each, with `listing_id = ""`.
+   - Lifecycles are collapsed by listing ID because the 2026-10-27 feed flapping re-created 9.7k lifecycles for 3k servers.
+2. **Distribution = each offer's lowest price.** Auction prices only fall while an offer is listed (10 of 24k lifecycles ever rose), so the lowest price is the price it sold or was withdrawn at.
+3. **"Configuration" means CPU + RAM + ECC + disks, without the datacenter.** Datacenter is a filter and a per-config breakdown.
+4. **Percentile and all-time-low are now per offer, at hardware level**, with a CPU-cohort fallback below 5 offers. `history_store.compute_percentiles` was removed. `config_history.parquet` is still written for external readers.
+5. **Client-side grouping is accepted for this page.** `web/configs.html` loads `offer_index.parquet` and the snapshot's listing IDs and groups them in the browser. This is a deliberate exception to the no-client-side-join stance: about 600 KB and 14k rows.
+6. The manifest stays at `schema_version` 1. `offer_index.parquet` is listed in `OPTIONAL_ARTIFACTS`, so the manifest that was live before 0.6.0, which cannot name it, still validates.
+
 ### Historical stats: value percentile & all-time-low — IMPLEMENTED 2026-08-14
 
 **Shipped** (`pipeline/src/pipeline/history_store.py`, image 0.1.13+). Answers: how does this listing's price compare to the extremes/distribution of every time this exact config has ever been auctioned. The design below is kept as originally resolved on 2026-08-12; three deviations from it, found during implementation, are called out inline rather than silently rewritten over:

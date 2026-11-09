@@ -8,6 +8,12 @@ does not guarantee stable in meaning across ticks, see Edge Case Catalog
 EC-4) across pipeline cycles, and derives a percentile rank + all-time-low
 flag for each current listing against its own config's recorded history.
 
+Superseded for ranking in 0.6.0: percentile and all-time-low now come from
+offer_index.py, which counts each offer once instead of once per published
+cycle (this histogram's weights follow the polling rate). This file is still
+written for external readers; nothing in the pipeline reads it back for
+ranking any more.
+
 Storage is a bounded price->count histogram per config (one entry per
 DISTINCT price a config has ever sold at), not a per-tick log -- see the
 Anti-Patterns Catalog's "never read-modify-write a growing published file."
@@ -28,20 +34,10 @@ import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
 
-# Below this many recorded observations, a config's own histogram is too
-# thin to rank against meaningfully -- fall back to the broader same-CPU
-# cohort (plan.md: "exact threshold TBD once real data volume is known"). 5
-# is a conservative starting point, easily tuned once real volume is
-# observed from the first few weeks of live runs.
-MIN_OBSERVATIONS_FOR_OWN_HISTOGRAM = 5
-
 HISTORY_SCHEMA = pa.schema([
     pa.field("config_signature", pa.string()),
-    # Cohort grouping key for the below-threshold fallback. Not part of the
-    # original plan.md schema sketch (config_signature/first_observed_at/
-    # last_observed_at/total_observations/min_price_effective_monthly/
-    # price_histogram) -- added so the fallback has something to group on
-    # without maintaining a second stored table (see _cohort_histogram).
+    # CPU cohort key (build_cpu_cohort_key). Not part of the original
+    # plan.md schema sketch; kept for external readers.
     pa.field("cpu_key", pa.string()),
     pa.field("first_observed_at", pa.string()),
     pa.field("last_observed_at", pa.string()),
@@ -219,94 +215,6 @@ def update_history(history: dict, listings, now: datetime) -> dict:
         entry.min_price_effective_monthly = min(entry.min_price_effective_monthly, price)
 
     return history
-
-
-def _percentile_from_histogram(histogram: dict, total_observations: int, current_price: int):
-    """
-    percentile = fraction of every recorded observation this price is
-    cheaper than or equal to (plan.md's formula) -- i.e. "cheaper than N% of
-    every time this exact config has appeared." Returns None if there are no
-    observations to rank against at all.
-    """
-    if total_observations == 0:
-        return None
-    at_or_above = sum(count for price, count in histogram.items() if price >= current_price)
-    return at_or_above / total_observations
-
-
-def _cohort_histogram(history: dict, cpu_key: str) -> tuple[dict, int]:
-    """
-    Merge every config_signature entry sharing cpu_key into one combined
-    histogram, for the below-threshold fallback. Computed on the fly rather
-    than stored as a second table -- cheap at this project's data volume and
-    avoids a second place the same counts could drift out of sync.
-    """
-    merged: dict = {}
-    for entry in history.values():
-        if entry.cpu_key != cpu_key:
-            continue
-        for price, count in entry.price_histogram.items():
-            merged[price] = merged.get(price, 0) + count
-    return merged, sum(merged.values())
-
-
-def compute_percentiles(
-    history: dict,
-    listings,
-    min_observations: int = MIN_OBSERVATIONS_FOR_OWN_HISTOGRAM,
-) -> None:
-    """
-    Mutate each listing in place with its history-derived fields. Call this
-    AFTER update_history() has folded the current cycle's own prices into
-    `history` -- each listing is deliberately ranked against a set that
-    includes itself (a first-ever observation of a config is trivially its
-    own all-time-low, which is the correct 0th-percentile special case).
-
-    Sets, per listing:
-    - price_percentile_vs_history: float in [0, 1], or None if no history
-      data exists at all (own signature AND cpu cohort both empty)
-    - price_per_benchmark_point_{single,multi}_percentile_vs_history: same
-      value as price_percentile_vs_history when benchmark_matched, else None
-      -- dividing price by a positive per-config constant (the matched
-      CPU's fixed benchmark score) doesn't change rank order, so one
-      histogram legitimately serves all three metrics (plan.md)
-    - is_all_time_low: whether this price is (tied for) this exact config's
-      lowest ever recorded -- always about the exact signature, never the
-      broader cohort, even when the percentile itself used the fallback
-    - history_sample_size: observation count backing the percentile actually
-      used (own or cohort)
-    - history_cohort_fallback: whether the cohort fallback was used
-    """
-    for listing in listings:
-        signature = build_config_signature(listing)
-        entry = history.get(signature)
-
-        histogram = entry.price_histogram if entry else {}
-        total = entry.total_observations if entry else 0
-        used_cohort = False
-
-        if total < min_observations:
-            cohort_key = build_cpu_cohort_key(listing)
-            cohort_histogram, cohort_total = _cohort_histogram(history, cohort_key)
-            if cohort_total > total:
-                histogram, total = cohort_histogram, cohort_total
-                used_cohort = True
-
-        percentile = _percentile_from_histogram(histogram, total, listing.price_effective_monthly)
-
-        listing.price_percentile_vs_history = percentile
-        listing.price_per_benchmark_point_single_percentile_vs_history = (
-            percentile if listing.benchmark_matched else None
-        )
-        listing.price_per_benchmark_point_multi_percentile_vs_history = (
-            percentile if listing.benchmark_matched else None
-        )
-        listing.history_sample_size = total
-        listing.history_cohort_fallback = used_cohort
-        listing.is_all_time_low = (
-            entry is not None
-            and listing.price_effective_monthly <= entry.min_price_effective_monthly
-        )
 
 
 def history_to_table(history: dict) -> pa.Table:

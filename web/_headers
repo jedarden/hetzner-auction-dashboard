@@ -20,3 +20,10 @@
 
 /
   Cache-Control: no-cache
+
+# Configuration index page (configs.html); Pages also serves it as /configs.
+/configs.html
+  Cache-Control: no-cache
+
+/configs
+  Cache-Control: no-cache

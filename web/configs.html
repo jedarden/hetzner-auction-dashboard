@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration Index</title>
+    <meta name="description" content="Every Hetzner auction hardware configuration ever seen, with the price distribution of its offers.">
+    <style>
+        :root {
+            --bg: #f8f9fa;
+            --surface: #ffffff;
+            --text: #212529;
+            --muted: #6c757d;
+            --border: #e9ecef;
+            --border-strong: #dee2e6;
+            --accent: #1c7ed6;
+            --accent-soft: #e7f5ff;
+            --bar: #a5b4c4;
+            --bar-hover: #74879b;
+            --now: #e8590c;
+            --good: #2b8a3e;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px 16px; }
+
+        header, .panel {
+            background: var(--surface);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .nav { font-size: 0.9rem; margin-bottom: 8px; }
+        .nav a { color: var(--accent); text-decoration: none; }
+        .nav a:hover { text-decoration: underline; }
+
+        h1 { font-size: 1.8rem; margin-bottom: 6px; }
+        .subtitle { color: var(--muted); max-width: 70ch; }
+
+        .stats { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 18px; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .stat-label { color: var(--muted); font-size: 0.85rem; }
+
+        .filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; align-items: end; }
+        .filters label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+        .filters input[type=text], .filters input[type=number], .filters select {
+            width: 100%; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 6px;
+            font: inherit; font-size: 0.9rem; background: var(--surface); color: var(--text);
+        }
+        .check { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; padding-bottom: 7px; }
+        .check label { margin: 0; color: var(--text); font-weight: 400; font-size: 0.9rem; }
+
+        .results-info { color: var(--muted); font-size: 0.9rem; margin-bottom: 10px; }
+
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        th, td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+        th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); white-space: nowrap; user-select: none; }
+        th.sortable { cursor: pointer; }
+        th.sortable:hover { color: var(--text); }
+        th .ind { color: var(--accent); }
+        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        tbody tr.cfg { cursor: pointer; }
+        tbody tr.cfg:hover { background: #f1f3f5; }
+        tbody tr.cfg.open { background: var(--accent-soft); }
+
+        .cpu { font-weight: 600; }
+        .sub { color: var(--muted); font-size: 0.8rem; }
+        .dc { display: inline-block; font-size: 0.72rem; padding: 1px 6px; border-radius: 10px; background: #f1f3f5; color: #495057; margin: 1px 2px 1px 0; white-space: nowrap; }
+        .now { color: var(--now); font-weight: 600; }
+        .badge { display: inline-block; font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #fff4e6; color: var(--now); margin-left: 4px; }
+        .badge.low { background: #ebfbee; color: var(--good); }
+
+        svg.spark { display: block; }
+        .spark rect { fill: var(--bar); }
+        .spark .mark { fill: var(--now); }
+
+        .detail td { background: #fbfcfd; padding: 18px 16px 22px; cursor: default; }
+        .detail-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; }
+        @media (max-width: 900px) { .detail-grid { grid-template-columns: minmax(0, 1fr); } }
+        .detail h3 { font-size: 0.95rem; margin-bottom: 8px; }
+        .detail p.note { color: var(--muted); font-size: 0.8rem; margin-top: 8px; }
+        svg.hist { width: 100%; height: auto; display: block; }
+        .hist rect.bar { fill: var(--bar); }
+        .hist rect.bar:hover { fill: var(--bar-hover); }
+        .hist .axis { stroke: var(--border-strong); }
+        .hist text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+        .hist .mark { fill: var(--now); }
+        .legend { display: flex; gap: 16px; font-size: 0.8rem; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+        .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+        table.mini { font-size: 0.82rem; margin-bottom: 16px; }
+        table.mini th, table.mini td { padding: 4px 8px; }
+
+        .more { display: block; margin: 14px auto 0; padding: 8px 18px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); cursor: pointer; font: inherit; }
+        .more[hidden] { display: none; }
+        .more:hover { background: #f1f3f5; }
+
+        .message { padding: 40px 16px; text-align: center; color: var(--muted); }
+        .message.error { color: #c92a2a; }
+
+        footer { margin: 2rem auto 1rem; text-align: center; font-size: 0.8rem; opacity: 0.65; }
+        footer a { color: inherit; }
+
+        @media (max-width: 640px) {
+            header, .panel { padding: 16px; }
+            h1 { font-size: 1.4rem; }
+            .col-wide { display: none; }
+        }
+    </style>
+    <!-- Import map for the Agentation toolbar at the end of <body>. It must
+         precede every module script on the page (a map added after a module
+         has started loading is ignored), and it makes agentation and this
+         page share one React instance (see index.html for the details). -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.3.1",
+            "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+            "react-dom": "https://esm.sh/react-dom@18.3.1",
+            "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="nav"><a href="./">← Current listings</a></div>
+            <h1>Configuration index</h1>
+            <p class="subtitle">
+                Every hardware configuration seen in the auction, and the prices its offers went for.
+                Each server counts once, at the lowest price it reached. Hetzner only ever lowers an
+                auction price, so that is the price it sold or was withdrawn at. Prices are per month,
+                including the primary IPv4 address, excluding VAT.
+            </p>
+            <div class="stats">
+                <div><div class="stat-value" id="stat-configs">–</div><div class="stat-label">configurations</div></div>
+                <div><div class="stat-value" id="stat-offers">–</div><div class="stat-label">offers seen</div></div>
+                <div><div class="stat-value" id="stat-listed">–</div><div class="stat-label">listed now</div></div>
+                <div><div class="stat-value" id="stat-since">–</div><div class="stat-label">tracked since</div></div>
+            </div>
+        </header>
+
+        <section class="panel" aria-label="Filters">
+            <div class="filters">
+                <div>
+                    <label for="f-q">CPU or disk (contains)</label>
+                    <input type="text" id="f-q" placeholder="e.g. 7950X, NVMe">
+                </div>
+                <div>
+                    <label for="f-location">Datacenter</label>
+                    <select id="f-location">
+                        <option value="">Any</option>
+                        <option value="FSN">Falkenstein</option>
+                        <option value="NBG">Nuremberg</option>
+                        <option value="HEL">Helsinki</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="f-ram">Minimum RAM (GB)</label>
+                    <input type="number" id="f-ram" min="0" step="1" value="0">
+                </div>
+                <div>
+                    <label for="f-disk">Disk type</label>
+                    <select id="f-disk">
+                        <option value="">Any</option>
+                        <option value="NVMe">NVMe</option>
+                        <option value="SSD">SATA SSD</option>
+                        <option value="HDD">HDD</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="f-min-offers">Minimum offers</label>
+                    <input type="number" id="f-min-offers" min="1" step="1" value="1">
+                </div>
+                <div class="check"><input type="checkbox" id="f-ecc"><label for="f-ecc">ECC only</label></div>
+                <div class="check"><input type="checkbox" id="f-listed"><label for="f-listed">Listed now only</label></div>
+            </div>
+        </section>
+
+        <section class="panel" aria-label="Configurations">
+            <div class="results-info" id="results-info">Loading…</div>
+            <div class="table-wrap">
+                <table id="cfg-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="cpu">Configuration <span class="ind"></span></th>
+                            <th class="col-wide">Datacenters</th>
+                            <th class="sortable num" data-sort="n">Offers <span class="ind"></span></th>
+                            <th class="sortable num" data-sort="min">Lowest <span class="ind"></span></th>
+                            <th class="sortable num" data-sort="median">Median <span class="ind"></span></th>
+                            <th class="sortable num" data-sort="max">Highest <span class="ind"></span></th>
+                            <th>Distribution</th>
+                            <th class="sortable num" data-sort="now">Now <span class="ind"></span></th>
+                            <th class="sortable num col-wide" data-sort="lastSeen">Last seen <span class="ind"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="cfg-body"></tbody>
+                </table>
+            </div>
+            <div id="message" class="message">Loading offer index…</div>
+            <button type="button" class="more" id="more" hidden>Show more</button>
+        </section>
+    </div>
+
+    <script type="module">
+        const DATA_MANIFEST_URL = 'https://hetzner-data.ardenone.com/manifest.json';
+        const PAGE_SIZE = 150;
+        const LOCATION_NAMES = { FSN: 'Falkenstein', NBG: 'Nuremberg', HEL: 'Helsinki' };
+
+        let offers = [];            // one entry per offer
+        let listedNow = new Map();  // listing_id -> current price (cents)
+        let groups = [];            // filtered + sorted configurations
+        let shown = PAGE_SIZE;
+        let openKey = null;
+        const state = { sort: 'n', dir: 'desc' };
+
+        const $ = (id) => document.getElementById(id);
+        const eur = (cents) => cents == null ? '–' : `€${(cents / 100).toFixed(2)}`;
+        const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const locationOf = (dc) => (dc.match(/^[A-Z]+/) || [dc])[0];
+        const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '–';
+
+        function formatDisks(layout) {
+            if (!layout) return 'no disks';
+            return layout.split(',').map((part) => {
+                const [type, count, gb] = part.split(':');
+                const size = Number(gb) >= 1000 ? `${+(Number(gb) / 1000).toFixed(2)} TB` : `${gb} GB`;
+                return `${count}× ${size} ${type}`;
+            }).join(' + ');
+        }
+
+        function quantile(sorted, q) {
+            if (!sorted.length) return null;
+            const pos = (sorted.length - 1) * q;
+            const lo = Math.floor(pos), hi = Math.ceil(pos);
+            return Math.round(sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo));
+        }
+
+        // Share of offers whose lowest price was at or above `price`.
+        function cheaperThan(sorted, price) {
+            let lo = 0, hi = sorted.length;
+            while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < price) lo = mid + 1; else hi = mid; }
+            return (sorted.length - lo) / sorted.length;
+        }
+
+        // Price bins in round euro steps, about `target` of them.
+        function bins(sorted, target) {
+            const min = sorted[0], max = sorted[sorted.length - 1];
+            const steps = [100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+            const step = steps.find((s) => (max - min) / s <= target) || steps[steps.length - 1];
+            const start = Math.floor(min / step) * step;
+            const count = Math.floor((max - start) / step) + 1;
+            const counts = new Array(count).fill(0);
+            for (const p of sorted) counts[Math.floor((p - start) / step)]++;
+            return { start, step, counts };
+        }
+
+        // ---------- data ----------
+
+        async function loadData() {
+            const manifest = await fetch(DATA_MANIFEST_URL, { cache: 'no-store' }).then((r) => {
+                if (!r.ok) throw new Error(`manifest HTTP ${r.status}`);
+                return r.json();
+            });
+            if (manifest.schema_version !== 1 || !manifest.files) throw new Error('unsupported data manifest');
+            if (!manifest.files['offer_index.parquet']) {
+                throw new Error('The offer index has not been published yet. It appears after the first pipeline cycle of version 0.6.0.');
+            }
+            const base = new URL('.', DATA_MANIFEST_URL);
+            const offerUrl = new URL(manifest.files['offer_index.parquet'], base).href;
+            const snapshotUrl = new URL(manifest.files['current_snapshot.parquet'], base).href;
+
+            const duckdb = await import('https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm');
+            const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
+            const workerUrl = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' }));
+            const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
+            await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+            URL.revokeObjectURL(workerUrl);
+            const conn = await db.connect();
+
+            const offerRows = (await conn.query(`
+                SELECT hardware_key, listing_id, cpu, ram_gb, ram_ecc, disk_layout, datacenter,
+                       multi_thread_score, first_seen_at, last_seen_at,
+                       lowest_price_effective_monthly AS low
+                FROM '${offerUrl}'
+            `)).toArray();
+            offers = offerRows.map((r) => ({
+                hw: r.hardware_key,
+                id: r.listing_id,
+                cpu: r.cpu,
+                ram: Number(r.ram_gb),
+                ecc: Boolean(r.ram_ecc),
+                disks: r.disk_layout,
+                dc: r.datacenter,
+                loc: locationOf(r.datacenter),
+                mt: r.multi_thread_score == null ? null : Number(r.multi_thread_score),
+                firstSeen: r.first_seen_at,
+                lastSeen: r.last_seen_at,
+                low: Number(r.low),
+            }));
+
+            const snapRows = (await conn.query(`SELECT listing_id, price_effective_monthly AS price FROM '${snapshotUrl}'`)).toArray();
+            listedNow = new Map(snapRows.map((r) => [r.listing_id, Number(r.price)]));
+            await conn.close();
+        }
+
+        // ---------- grouping ----------
+
+        function readFilters() {
+            return {
+                q: $('f-q').value.trim().toLowerCase(),
+                location: $('f-location').value,
+                ram: Number($('f-ram').value) || 0,
+                disk: $('f-disk').value,
+                minOffers: Math.max(1, Number($('f-min-offers').value) || 1),
+                ecc: $('f-ecc').checked,
+                listed: $('f-listed').checked,
+            };
+        }
+
+        function buildGroups(f) {
+            const byKey = new Map();
+            for (const o of offers) {
+                if (f.location && o.loc !== f.location) continue;
+                let g = byKey.get(o.hw);
+                if (!g) {
+                    g = { key: o.hw, cpu: o.cpu, ram: o.ram, ecc: o.ecc, disks: o.disks, mt: null,
+                          prices: [], dcs: new Map(), listed: [], placeholders: 0,
+                          firstSeen: o.firstSeen, lastSeen: o.lastSeen };
+                    byKey.set(o.hw, g);
+                }
+                g.prices.push(o.low);
+                if (o.mt != null) g.mt = o.mt;
+                if (!o.id) g.placeholders++;
+                const d = g.dcs.get(o.dc) || [];
+                d.push(o.low);
+                g.dcs.set(o.dc, d);
+                if (o.firstSeen < g.firstSeen) g.firstSeen = o.firstSeen;
+                if (o.lastSeen > g.lastSeen) g.lastSeen = o.lastSeen;
+                if (o.id && listedNow.has(o.id)) g.listed.push({ id: o.id, dc: o.dc, price: listedNow.get(o.id) });
+            }
+
+            const diskNeedle = f.disk ? `${f.disk}:` : '';
+            const out = [];
+            for (const g of byKey.values()) {
+                if (g.ram < f.ram) continue;
+                if (f.ecc && !g.ecc) continue;
+                if (diskNeedle && !(g.disks || '').split(',').some((p) => p.startsWith(diskNeedle))) continue;
+                if (f.q && !`${g.cpu} ${g.disks} ${formatDisks(g.disks)}`.toLowerCase().includes(f.q)) continue;
+                if (g.prices.length < f.minOffers) continue;
+                if (f.listed && !g.listed.length) continue;
+                g.prices.sort((a, b) => a - b);
+                g.listed.sort((a, b) => a.price - b.price);
+                g.n = g.prices.length;
+                g.min = g.prices[0];
+                g.max = g.prices[g.n - 1];
+                g.median = quantile(g.prices, 0.5);
+                g.now = g.listed.length ? g.listed[0].price : null;
+                out.push(g);
+            }
+            return out;
+        }
+
+        function sortGroups(list) {
+            const { sort, dir } = state;
+            const sign = dir === 'asc' ? 1 : -1;
+            list.sort((a, b) => {
+                const va = a[sort], vb = b[sort];
+                if (va == null && vb == null) return 0;
+                if (va == null) return 1;          // empty values always last
+                if (vb == null) return -1;
+                if (typeof va === 'string') return sign * va.localeCompare(vb);
+                return sign * (va - vb) || b.n - a.n;
+            });
+            return list;
+        }
+
+        // ---------- rendering ----------
+
+        function sparkline(g) {
+            const { start, step, counts } = bins(g.prices, 16);
+            const w = 120, h = 28, gap = 1;
+            const bw = Math.max(1, (w - gap * (counts.length - 1)) / counts.length);
+            const peak = Math.max(...counts);
+            const bars = counts.map((c, i) => {
+                if (!c) return '';
+                const bh = Math.max(2, (c / peak) * (h - 6));
+                return `<rect x="${(i * (bw + gap)).toFixed(1)}" y="${(h - 4 - bh).toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}"/>`;
+            }).join('');
+            const marks = g.listed.map((l) => {
+                const i = Math.min(counts.length - 1, Math.max(0, Math.floor((l.price - start) / step)));
+                return `<rect class="mark" x="${(i * (bw + gap)).toFixed(1)}" y="${h - 3}" width="${bw.toFixed(1)}" height="3"/>`;
+            }).join('');
+            return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Price distribution, ${eur(g.min)} to ${eur(g.max)}">${bars}${marks}</svg>`;
+        }
+
+        function histogram(g) {
+            const { start, step, counts } = bins(g.prices, 30);
+            const W = 720, H = 200, padL = 34, padR = 8, padT = 10, padB = 40;
+            const plotW = W - padL - padR, plotH = H - padT - padB;
+            const bw = plotW / counts.length;
+            const peak = Math.max(...counts);
+            const y = (c) => padT + plotH - (c / peak) * plotH;
+            const bars = counts.map((c, i) => {
+                if (!c) return '';
+                const lo = start + i * step;
+                return `<rect class="bar" x="${(padL + i * bw + 0.5).toFixed(1)}" y="${y(c).toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${(padT + plotH - y(c)).toFixed(1)}"><title>${eur(lo)}–${eur(lo + step - 1)}: ${c} offer${c === 1 ? '' : 's'}</title></rect>`;
+            }).join('');
+            const labelEvery = Math.ceil(counts.length / 8);
+            const labels = counts.map((_, i) => i % labelEvery ? '' :
+                `<text x="${(padL + i * bw).toFixed(1)}" y="${H - padB + 14}" text-anchor="start">€${Math.round((start + i * step) / 100)}</text>`).join('');
+            const marks = g.listed.map((l) => {
+                const x = padL + ((l.price - start) / step) * bw;
+                return `<path class="mark" d="M${x.toFixed(1)} ${H - padB + 18} l-5 9 h10 z"><title>Listed now: ${eur(l.price)} (${esc(l.dc)})</title></path>`;
+            }).join('');
+            return `<svg class="hist" viewBox="0 0 ${W} ${H}" role="img" aria-label="Histogram of ${g.n} offers' lowest prices">
+                <line class="axis" x1="${padL}" x2="${W - padR}" y1="${padT + plotH}" y2="${padT + plotH}"/>
+                <text x="${padL - 6}" y="${padT + 8}" text-anchor="end">${peak}</text>
+                <text x="${padL - 6}" y="${padT + plotH}" text-anchor="end">0</text>
+                ${bars}${labels}${marks}
+            </svg>`;
+        }
+
+        function detailRow(g) {
+            const qs = [['Lowest', g.min], ['10th percentile', quantile(g.prices, 0.1)], ['25th percentile', quantile(g.prices, 0.25)],
+                        ['Median', g.median], ['75th percentile', quantile(g.prices, 0.75)], ['90th percentile', quantile(g.prices, 0.9)], ['Highest', g.max]];
+            const dcRows = [...g.dcs.entries()].sort((a, b) => b[1].length - a[1].length).map(([dc, ps]) => {
+                ps.sort((a, b) => a - b);
+                return `<tr><td>${esc(dc)}</td><td class="num">${ps.length}</td><td class="num">${eur(ps[0])}</td><td class="num">${eur(quantile(ps, 0.5))}</td></tr>`;
+            }).join('');
+            const listedRows = g.listed.map((l) =>
+                `<tr><td>#${esc(l.id)}</td><td>${esc(l.dc)}</td><td class="num now">${eur(l.price)}</td><td class="num">cheaper than ${Math.round(cheaperThan(g.prices, l.price) * 100)}%</td></tr>`).join('');
+            const placeholderNote = g.placeholders
+                ? `<p class="note">${g.placeholders} offer${g.placeholders === 1 ? ' was' : 's were'} seen between 14 and 20 Aug 2026, before each server was tracked individually. Each is counted as one offer at its lowest recorded price, so the real count may be higher.</p>`
+                : '';
+            return `<tr class="detail"><td colspan="9">
+                <div class="detail-grid">
+                    <div>
+                        <h3>${g.n} offer${g.n === 1 ? '' : 's'} by lowest price</h3>
+                        ${histogram(g)}
+                        <div class="legend"><span><i style="background:var(--bar)"></i>offers per price band</span>${g.listed.length ? '<span><i style="background:var(--now)"></i>listed now</span>' : ''}</div>
+                        <p class="note">First seen ${fmtDate(g.firstSeen)} · last seen ${fmtDate(g.lastSeen)}${g.mt ? ` · multi-thread benchmark ${g.mt.toLocaleString()}` : ''}</p>
+                        ${placeholderNote}
+                    </div>
+                    <div>
+                        <h3>Price spread</h3>
+                        <table class="mini"><tbody>${qs.map(([k, v]) => `<tr><td>${k}</td><td class="num">${eur(v)}</td></tr>`).join('')}</tbody></table>
+                        <h3>By datacenter</h3>
+                        <table class="mini"><thead><tr><th>DC</th><th class="num">Offers</th><th class="num">Lowest</th><th class="num">Median</th></tr></thead><tbody>${dcRows}</tbody></table>
+                        ${listedRows ? `<h3>Listed now</h3><table class="mini"><tbody>${listedRows}</tbody></table>` : ''}
+                    </div>
+                </div>
+            </td></tr>`;
+        }
+
+        function configRow(g) {
+            const dcs = [...new Set([...g.dcs.keys()].map(locationOf))].sort()
+                .map((l) => `<span class="dc" title="${esc([...g.dcs.keys()].filter((d) => locationOf(d) === l).join(', '))}">${esc(LOCATION_NAMES[l] || l)}</span>`).join('');
+            let nowCell = '<span class="sub">–</span>';
+            if (g.now != null) {
+                const atLow = g.now <= g.min;
+                nowCell = `<span class="now">${eur(g.now)}</span>${atLow ? '<span class="badge low" title="At or below every offer ever seen">ATL</span>' : ''}
+                    <div class="sub">${g.listed.length} listed · cheaper than ${Math.round(cheaperThan(g.prices, g.now) * 100)}%</div>`;
+            }
+            return `<tr class="cfg${openKey === g.key ? ' open' : ''}" data-key="${esc(g.key)}" aria-expanded="${openKey === g.key}">
+                <td><div class="cpu">${esc(g.cpu)}</div><div class="sub">${g.ram} GB${g.ecc ? ' ECC' : ''} · ${esc(formatDisks(g.disks))}</div></td>
+                <td class="col-wide">${dcs}</td>
+                <td class="num">${g.n.toLocaleString()}</td>
+                <td class="num">${eur(g.min)}</td>
+                <td class="num">${eur(g.median)}</td>
+                <td class="num">${eur(g.max)}</td>
+                <td>${sparkline(g)}</td>
+                <td class="num">${nowCell}</td>
+                <td class="num col-wide">${fmtDate(g.lastSeen)}</td>
+            </tr>${openKey === g.key ? detailRow(g) : ''}`;
+        }
+
+        function render() {
+            const f = readFilters();
+            groups = sortGroups(buildGroups(f));
+            const offerCount = groups.reduce((s, g) => s + g.n, 0);
+            const listedCount = groups.reduce((s, g) => s + g.listed.length, 0);
+            $('results-info').textContent = `${groups.length.toLocaleString()} configuration${groups.length === 1 ? '' : 's'} · ${offerCount.toLocaleString()} offers · ${listedCount} listed now`;
+            $('cfg-body').innerHTML = groups.slice(0, shown).map(configRow).join('');
+            $('more').hidden = groups.length <= shown;
+            $('more').textContent = `Show more (${(groups.length - shown).toLocaleString()} remaining)`;
+            const msg = $('message');
+            msg.hidden = groups.length > 0;
+            msg.className = 'message';
+            msg.textContent = 'No configurations match these filters.';
+            document.querySelectorAll('th.sortable').forEach((th) => {
+                th.querySelector('.ind').textContent = th.dataset.sort === state.sort ? (state.dir === 'asc' ? '▲' : '▼') : '';
+                th.setAttribute('aria-sort', th.dataset.sort === state.sort ? (state.dir === 'asc' ? 'ascending' : 'descending') : 'none');
+            });
+            writeURL();
+        }
+
+        // ---------- URL state ----------
+
+        const FILTER_PARAMS = { q: 'f-q', dc: 'f-location', ram: 'f-ram', disk: 'f-disk', offers: 'f-min-offers' };
+        const CHECK_PARAMS = { ecc: 'f-ecc', listed: 'f-listed' };
+
+        function readURL() {
+            const p = new URLSearchParams(location.search);
+            for (const [k, id] of Object.entries(FILTER_PARAMS)) if (p.has(k)) $(id).value = p.get(k);
+            for (const [k, id] of Object.entries(CHECK_PARAMS)) $(id).checked = p.get(k) === '1';
+            if (p.has('sort')) state.sort = p.get('sort');
+            if (p.has('dir')) state.dir = p.get('dir') === 'asc' ? 'asc' : 'desc';
+            if (p.has('open')) openKey = p.get('open');
+        }
+
+        function writeURL() {
+            const p = new URLSearchParams();
+            const defaults = { 'f-ram': '0', 'f-min-offers': '1' };
+            for (const [k, id] of Object.entries(FILTER_PARAMS)) {
+                const v = $(id).value.trim();
+                if (v && v !== defaults[id]) p.set(k, v);
+            }
+            for (const [k, id] of Object.entries(CHECK_PARAMS)) if ($(id).checked) p.set(k, '1');
+            if (state.sort !== 'n' || state.dir !== 'desc') { p.set('sort', state.sort); p.set('dir', state.dir); }
+            if (openKey) p.set('open', openKey);
+            const qs = p.toString();
+            history.replaceState(null, '', qs ? `?${qs}` : location.pathname);
+        }
+
+        // ---------- wiring ----------
+
+        function wire() {
+            let t;
+            const rerender = () => { clearTimeout(t); t = setTimeout(() => { shown = PAGE_SIZE; render(); }, 120); };
+            document.querySelectorAll('.filters input, .filters select').forEach((el) => el.addEventListener('input', rerender));
+            document.querySelectorAll('th.sortable').forEach((th) => th.addEventListener('click', () => {
+                const key = th.dataset.sort;
+                if (state.sort === key) state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+                else { state.sort = key; state.dir = ['cpu', 'min', 'median', 'max', 'now'].includes(key) ? 'asc' : 'desc'; }
+                render();
+            }));
+            $('cfg-body').addEventListener('click', (e) => {
+                const row = e.target.closest('tr.cfg');
+                if (!row) return;
+                openKey = openKey === row.dataset.key ? null : row.dataset.key;
+                render();
+            });
+            $('more').addEventListener('click', () => { shown += PAGE_SIZE; render(); });
+        }
+
+        function renderStats() {
+            const hw = new Set(offers.map((o) => o.hw));
+            const since = offers.reduce((m, o) => o.firstSeen < m ? o.firstSeen : m, offers[0]?.firstSeen || '');
+            $('stat-configs').textContent = hw.size.toLocaleString();
+            $('stat-offers').textContent = offers.length.toLocaleString();
+            $('stat-listed').textContent = listedNow.size.toLocaleString();
+            $('stat-since').textContent = fmtDate(since);
+        }
+
+        async function main() {
+            readURL();
+            wire();
+            try {
+                await loadData();
+            } catch (err) {
+                console.error(err);
+                const msg = $('message');
+                msg.className = 'message error';
+                msg.textContent = `Could not load the offer index: ${err.message}`;
+                $('results-info').textContent = '';
+                return;
+            }
+            renderStats();
+            // A deep link opens one configuration even if it is not on the first page.
+            render();
+            if (openKey && !groups.slice(0, shown).some((g) => g.key === openKey)) {
+                const idx = groups.findIndex((g) => g.key === openKey);
+                if (idx >= 0) { shown = idx + 1; render(); }
+            }
+            if (openKey) document.querySelector('tr.cfg.open')?.scrollIntoView({ block: 'center' });
+        }
+
+        main();
+    </script>
+
+    <div id="agentation-root"></div>
+    <script type="module">
+        import React from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { Agentation } from 'https://esm.sh/agentation@3.0.2?external=react,react-dom';
+
+        createRoot(document.getElementById('agentation-root')).render(React.createElement(Agentation));
+    </script>
+
+    <footer>
+        Built by <a href="https://jedarden.com">Jed Arden</a> ·
+        <a href="https://github.com/jedarden/hetzner-auction-dashboard">source</a>
+    </footer>
+</body>
+</html>

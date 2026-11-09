@@ -579,6 +579,10 @@
             white-space: nowrap;
         }
 
+        .history-link, .index-link { color: inherit; text-decoration: underline dotted; }
+        .index-link { color: #1c7ed6; font-weight: 600; text-decoration: none; }
+        .index-link:hover { text-decoration: underline; }
+
         .atl-badge {
             display: inline-block;
             background: #fff3bf;
@@ -777,7 +781,8 @@
         <header>
             <h1>Hetzner Auction Dashboard</h1>
             <p class="subtitle">Find the best value in Hetzner's server auction with benchmark-based pricing</p>
-            <span class="release-version" title="Dashboard release version">v0.5.0</span>
+            <p class="subtitle"><a class="index-link" href="configs.html">Configuration index →</a> every hardware configuration ever seen and how its offers were priced</p>
+            <span class="release-version" title="Dashboard release version">v0.6.0</span>
             <div class="best-deal-container">
                 <button class="best-deal-button" id="best-deal-now">
                     <span class="best-deal-icon">⚡</span>
@@ -948,7 +953,7 @@
                                 <th class="sortable numeric col-single" data-sort="price_per_benchmark_point_single">€/Bench (S) <span class="sort-indicator" data-indicator="price_per_benchmark_point_single"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_gb_ram">€/GB RAM <span class="sort-indicator" data-indicator="price_per_gb_ram"></span></th>
                                 <th class="sortable numeric" data-sort="price_per_tb_disk">€/TB Disk <span class="sort-indicator" data-indicator="price_per_tb_disk"></span></th>
-                                <th class="sortable numeric" data-sort="price_percentile_vs_history" title="Cheaper-than-history rank for this exact CPU+RAM+disk+datacenter config (or the broader CPU model when too little history exists yet)">History <span class="sort-indicator" data-indicator="price_percentile_vs_history"></span></th>
+                                <th class="sortable numeric" data-sort="price_percentile_vs_history" title="Share of every offer of this CPU+RAM+disk hardware (any datacenter) whose lowest price was at or above this one; the CPU model when fewer than 5 offers exist">History <span class="sort-indicator" data-indicator="price_percentile_vs_history"></span></th>
                                 <th class="sortable" data-sort="last_seen_at">Last seen <span class="sort-indicator" data-indicator="last_seen_at"></span></th>
                                 <th></th>
                             </tr>
@@ -1799,20 +1804,22 @@
                 const scoreMultiClass = listing.benchmark_multi !== null ? 'metric-good' : 'metric-unscored';
                 const scoreSingleClass = listing.benchmark_single !== null ? 'metric-good' : 'metric-unscored';
 
-                // History percentile cell: "cheaper than N% of every time
-                // this exact config has appeared" (v2 historical-value
-                // feature, docs/plan/plan.md). Null until the pipeline has
-                // published at least one config_history.parquet cycle.
+                // History percentile cell: "cheaper than N% of every offer
+                // of this hardware ever seen", any datacenter, each offer
+                // counted once at its lowest price (offer_index.py, 0.6.0).
+                // Links to that configuration in the configuration index.
                 const historyClass = listing.price_percentile_vs_history !== null ? 'metric-good' : 'metric-unscored';
                 const historyText = listing.price_percentile_vs_history !== null
                     ? `Cheaper than ${Math.round(listing.price_percentile_vs_history * 100)}%`
                     : 'N/A';
-                const atlBadge = listing.is_all_time_low ? '<span class="atl-badge" title="Lowest price ever recorded for this exact config">ATL</span>' : '';
+                const atlBadge = listing.is_all_time_low ? '<span class="atl-badge" title="At or below the lowest price of every offer of this hardware ever seen">ATL</span>' : '';
                 const historyFallbackNote = (listing.price_percentile_vs_history !== null && listing.history_cohort_fallback)
                     ? '<div class="history-fallback">vs. CPU model (thin data)</div>' : '';
                 const historyTitle = listing.price_percentile_vs_history !== null
-                    ? `Based on ${listing.history_sample_size} observation${listing.history_sample_size === 1 ? '' : 's'}${listing.history_cohort_fallback ? ' across this CPU model (too little data for this exact config yet)' : ' of this exact config'}`
+                    ? `Ranked against ${listing.history_sample_size} offer${listing.history_sample_size === 1 ? '' : 's'}${listing.history_cohort_fallback ? ' with this CPU model (fewer than 5 offers of this exact hardware so far)' : ' of this hardware, any datacenter'}. Click for the full price distribution.`
                     : 'No history recorded yet for this configuration';
+                const hardwareKey = (listing.config_signature || '').split('|').slice(0, -1).join('|');
+                const historyHref = hardwareKey ? `configs.html?open=${encodeURIComponent(hardwareKey)}` : '';
 
                 return `
                     <tr class="${listing.active ? '' : 'inactive-listing'}">
@@ -1832,7 +1839,7 @@
                         <td class="numeric col-single ${benchmarkSingleClass}">${listing.price_per_benchmark_point_single !== null ? listing.price_per_benchmark_point_single.toFixed(5) : 'N/A'}</td>
                         <td class="numeric">€${listing.price_per_gb_ram.toFixed(2)}</td>
                         <td class="numeric">€${listing.price_per_tb_disk.toFixed(2)}</td>
-                        <td class="numeric ${historyClass}" title="${historyTitle}">${historyText}${atlBadge}${historyFallbackNote}</td>
+                        <td class="numeric ${historyClass}" title="${historyTitle}">${historyHref ? `<a class="history-link" href="${historyHref}">${historyText}</a>` : historyText}${atlBadge}${historyFallbackNote}</td>
                         <td title="${listing.last_seen_at || ''}">${formatSeenAt(listing.last_seen_at)}</td>
                         <td>${listing.active ? '<a class="hetzner-link" href="https://www.hetzner.com/sb/" target="_blank" rel="noopener noreferrer" title="View on Hetzner" aria-label="View on Hetzner">&rarr;</a>' : '<span class="status-chip-delisted" title="No longer offered in this exact configuration as of the last poll">Not offered now</span>'}</td>
                     </tr>

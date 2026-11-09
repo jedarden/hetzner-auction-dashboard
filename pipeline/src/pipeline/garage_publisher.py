@@ -35,15 +35,24 @@ ARTIFACTS = (
     # gets alerted twice instead of once. Confirmed live 2026-08-27: listing
     # 3064574 alerted at 11:22:13 and again at 11:23:16.
     "alerted-listings.json",
+    # Every offer ever seen, one row each (offer_index.py). Added in 0.6.0.
+    "offer_index.parquet",
 )
+# Artifacts introduced after the first manifest was written.  A manifest may
+# omit these: the manifest live when a new artifact is introduced cannot name
+# it, and rejecting that manifest would fail every cycle's change check, so
+# the first generation that contains the artifact could never be published.
+OPTIONAL_ARTIFACTS: Final = frozenset({"offer_index.parquet"})
 MANIFEST_SCHEMA_VERSION: Final = 1
 MANIFEST_KEYS: Final = frozenset(
     {"schema_version", "generation", "published_at", "dataset_hash", "files"}
 )
 _GENERATION_RE: Final = re.compile(r"^[0-9]{8}T[0-9]{6}Z(?:-[0-9a-f]{32})?$")
-# Generations kept besides the live one.  At the ~16-minute publish cadence,
-# 24 is roughly six hours of rollback window, and it is far longer than any
-# browser takes between reading manifest.json and fetching the files it names.
+# Generations kept besides the live one.  A generation is published only
+# when the auction dataset changed, which at the 60-second refresh interval
+# is most cycles, so 24 is roughly the last 25 minutes.  That is far longer
+# than any browser takes between reading manifest.json and fetching the
+# files it names; it is not a meaningful rollback history.
 DEFAULT_GENERATION_RETENTION: Final = 24
 _DELETE_BATCH: Final = 1000  # S3 DeleteObjects per-request maximum
 
@@ -108,12 +117,16 @@ def validate_manifest(manifest: Any) -> dict[str, Any]:
         raise GaragePublisherError("Manifest dataset_hash must be a non-empty string")
 
     files = manifest["files"]
-    if not isinstance(files, dict) or set(files) != set(ARTIFACTS):
+    if (
+        not isinstance(files, dict)
+        or not set(files) <= set(ARTIFACTS)
+        or not set(ARTIFACTS) - OPTIONAL_ARTIFACTS <= set(files)
+    ):
         raise GaragePublisherError(
             "Manifest files must list every published artifact exactly once"
         )
     expected_prefix = f"generations/{generation}/"
-    for filename in ARTIFACTS:
+    for filename in files:
         relative_key = files[filename]
         if (
             not isinstance(relative_key, str)

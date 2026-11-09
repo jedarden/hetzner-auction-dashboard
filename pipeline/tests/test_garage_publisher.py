@@ -13,6 +13,7 @@ from pipeline.enricher import EnrichedListing
 from pipeline.fetcher import DiskSpec
 from pipeline.garage_publisher import (
     ARTIFACTS,
+    OPTIONAL_ARTIFACTS,
     GaragePublisher,
     GaragePublisherError,
     dataset_hash,
@@ -85,6 +86,7 @@ def test_manifest_is_written_after_verified_generation(
         "current_snapshot.parquet",
         "config_history.parquet",
         "listing_history.parquet",
+        "offer_index.parquet",
     ):
         pq.write_table(pa.table({"id": [1]}), tmp_path / name)
     (tmp_path / "unmatched-cpus.json").write_text("{}", encoding="utf-8")
@@ -95,7 +97,7 @@ def test_manifest_is_written_after_verified_generation(
         tmp_path, "abc", datetime(2026, 8, 22, 18, 31, tzinfo=UTC)
     )
 
-    assert s3.upload_file.call_count == 5
+    assert s3.upload_file.call_count == len(ARTIFACTS)
     s3.put_object.assert_called_once()
     body = json.loads(s3.put_object.call_args.kwargs["Body"])
     assert body == manifest
@@ -137,6 +139,7 @@ def test_storage_prefix_is_hidden_from_public_manifest(
         "current_snapshot.parquet",
         "config_history.parquet",
         "listing_history.parquet",
+        "offer_index.parquet",
     ):
         pq.write_table(pa.table({"id": [1]}), tmp_path / name)
     (tmp_path / "unmatched-cpus.json").write_text("{}", encoding="utf-8")
@@ -159,6 +162,7 @@ def _write_generation(directory: Path) -> None:
         "current_snapshot.parquet",
         "config_history.parquet",
         "listing_history.parquet",
+        "offer_index.parquet",
     ):
         pq.write_table(pa.table({"id": [1]}), directory / name)
     (directory / "unmatched-cpus.json").write_text("{}", encoding="utf-8")
@@ -247,7 +251,7 @@ def test_same_second_retry_cannot_overwrite_live_generation(
     with pytest.raises(GaragePublisherError, match="Remote verification failed"):
         publisher.publish(tmp_path, "second", now)
 
-    retry_keys = {call.args[2] for call in s3.upload_file.call_args_list[5:]}
+    retry_keys = {call.args[2] for call in s3.upload_file.call_args_list[len(ARTIFACTS):]}
     assert prior_keys.isdisjoint(retry_keys)
     s3.put_object.assert_called_once()
     s3.get_object.side_effect = lambda **kw: {
@@ -359,6 +363,40 @@ def test_manifest_contract_rejects_invalid_version_and_timestamps(field, value):
     manifest = _manifest_for("20260822T183100Z")
     manifest[field] = value
     with pytest.raises(GaragePublisherError):
+        validate_manifest(manifest)
+
+
+def test_manifest_without_offer_index_is_still_valid():
+    """The manifest live when offer_index.parquet was introduced cannot name
+    it; rejecting it would fail every cycle's change check forever."""
+    manifest = {
+        "schema_version": 1,
+        "generation": "20261109T125951Z",
+        "published_at": "2026-11-09T12:59:51+00:00",
+        "dataset_hash": "abc",
+        "files": {
+            name: f"generations/20261109T125951Z/{name}"
+            for name in ARTIFACTS
+            if name not in OPTIONAL_ARTIFACTS
+        },
+    }
+    assert validate_manifest(manifest) is manifest
+
+
+@pytest.mark.parametrize("drop,extra", [("listing_history.parquet", None), (None, "surprise.parquet")])
+def test_manifest_contract_rejects_missing_required_or_unknown_files(drop, extra):
+    generation = "20261109T125951Z"
+    files = {name: f"generations/{generation}/{name}" for name in ARTIFACTS if name != drop}
+    if extra:
+        files[extra] = f"generations/{generation}/{extra}"
+    manifest = {
+        "schema_version": 1,
+        "generation": generation,
+        "published_at": "2026-11-09T12:59:51+00:00",
+        "dataset_hash": "abc",
+        "files": files,
+    }
+    with pytest.raises(GaragePublisherError, match="every published artifact"):
         validate_manifest(manifest)
 
 
